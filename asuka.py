@@ -33,10 +33,15 @@ Rules:
 async def on_message(message):
     if message.author == bot.user: return
     if bot.user.mentioned_in(message):
-        response = client.chat.completions.create(
-            model=NVIDIA_MODEL,
-            messages=[{"role": "system", "content": system_prompt}, {"role": "user", "content": message.content}]
-        )
-        await message.channel.send(response.choices[0].message.content)
+        print(f"Received message from {message.author}: {message.content}")
+        try:
+            response = client.chat.completions.create(
+                model=NVIDIA_MODEL,
+                messages=[{"role": "system", "content": system_prompt}, {"role": "user", "content": message.content}]
+            )
+            await message.channel.send(response.choices[0].message.content)
+        except Exception as e:
+            print(f"Error calling NVIDIA API: {e}")
+            await message.channel.send("What do you want?! I'm busy! Baka!")
 
 bot.run(DISCORD_TOKEN)

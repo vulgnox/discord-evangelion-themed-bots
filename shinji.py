@@ -44,19 +44,22 @@ async def on_message(message):
     # Only reply if someone @mentions Shinji
     if bot.user.mentioned_in(message):
         print(f"Received message from {message.author}: {message.content}")
-        
-        # Send the message to NVIDIA NIM
-        response = client.chat.completions.create(
-            model=NVIDIA_MODEL,
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": message.content}
-            ]
-        )
-        
-        # Get the reply and send it to Discord
-        reply = response.choices[0].message.content
-        await message.channel.send(reply)
+        try:
+            # Send the message to NVIDIA NIM
+            response = client.chat.completions.create(
+                model=NVIDIA_MODEL,
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": message.content}
+                ]
+            )
+            
+            # Get the reply and send it to Discord
+            reply = response.choices[0].message.content
+            await message.channel.send(reply)
+        except Exception as e:
+            print(f"Error calling NVIDIA API: {e}")
+            await message.channel.send(f"... i can't respond right now... sorry...")
 
 # Start the bot
 bot.run(DISCORD_TOKEN)
