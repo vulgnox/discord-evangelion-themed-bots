@@ -1,0 +1,11 @@
+# Railway configuration
+# This file helps Railway understand how to deploy the application
+
+[build]
+# Build commands if needed
+builder = "nixpacks"
+
+[deploy]
+# Keep the bot running without timeouts
+restartPolicyType = "always"
+healthcheckPath = "/"
