@@ -49,55 +49,61 @@ Three Discord bots themed after Neon Genesis Evangelion characters, powered by N
 
 Each bot runs as a separate Railway service. Follow these steps:
 
-### 1. Create Railway Projects
+### Step 1: Create the First Railway Project
 
-- Go to https://railway.app/
-- Sign in with your GitHub account
-- Create a new project for each bot
+1. Go to https://railway.app/
+2. Sign in with GitHub
+3. Click **"New Project"** → **"Deploy from GitHub"**
+4. Select the `discord-evangelion-themed-bots` repository
+5. Choose a service name (e.g., "shinji-bot")
+6. Click **"Deploy"**
 
-### 2. Connect GitHub Repository
+### Step 2: Configure Environment Variables
 
-For each Railway project:
-1. Click "Deploy from GitHub"
-2. Select `discord-evangelion-themed-bots` repository
-3. Choose "Confirm Deploy"
+After deployment:
 
-### 3. Configure Environment Variables
+1. Go to the service **Settings** → **Variables**
+2. Add these environment variables:
+   ```
+   DISCORD_TOKEN_SHINJI=<your_shinji_bot_token>
+   NVIDIA_API_KEY=<your_nvidia_nim_api_key>
+   NVIDIA_MODEL=meta/llama2-70b
+   ```
 
-For each Railway project, add the appropriate environment variables:
+### Step 3: Set Start Command
 
-**Shinji Project:**
-```
-DISCORD_TOKEN_SHINJI=<your_shinji_token>
-NVIDIA_API_KEY=<your_nvidia_key>
-NVIDIA_MODEL=meta/llama2-70b
-```
+1. Go to service **Settings** → **Deploy**
+2. Set the **Start Command** to: `python shinji.py`
+3. Save and redeploy
 
-**Asuka Project:**
-```
-DISCORD_TOKEN_ASUKA=<your_asuka_token>
-NVIDIA_API_KEY=<your_nvidia_key>
-NVIDIA_MODEL=meta/llama2-70b
-```
+### Step 4: Repeat for Asuka and Rei
 
-**Rei Project:**
-```
-DISCORD_TOKEN_REI=<your_rei_token>
-NVIDIA_API_KEY=<your_nvidia_key>
-NVIDIA_MODEL=meta/llama2-70b
-```
+Create two more Railway services from the same GitHub repo with:
 
-### 4. Set Start Command
+**Asuka Service:**
+- Environment Variables:
+  ```
+  DISCORD_TOKEN_ASUKA=<your_asuka_bot_token>
+  NVIDIA_API_KEY=<your_nvidia_nim_api_key>
+  NVIDIA_MODEL=meta/llama2-70b
+  ```
+- Start Command: `python asuka.py`
 
-For each service, go to **Settings** → **Deploy** and set the **Start Command**:
+**Rei Service:**
+- Environment Variables:
+  ```
+  DISCORD_TOKEN_REI=<your_rei_bot_token>
+  NVIDIA_API_KEY=<your_nvidia_nim_api_key>
+  NVIDIA_MODEL=meta/llama2-70b
+  ```
+- Start Command: `python rei.py`
 
-- For Shinji: `python shinji.py`
-- For Asuka: `python asuka.py`
-- For Rei: `python rei.py`
+### Tips
 
-### 5. Deploy
-
-Railway should auto-deploy on each GitHub push. Monitor the deployment logs to ensure everything works.
+- All three services can use the **same NVIDIA_API_KEY** (they share the quota)
+- Each service needs its **own Discord token** and **unique DISCORD_TOKEN variable**
+- Railway will auto-redeploy when you push to GitHub
+- Monitor logs in Railway to check for errors
 
 ## NVIDIA NIM Models
 
