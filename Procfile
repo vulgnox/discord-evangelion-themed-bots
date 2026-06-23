@@ -1,1 +1,1 @@
-web: python shinji.py
+web: python run_all_bots.py

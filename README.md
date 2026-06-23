@@ -47,63 +47,49 @@ Three Discord bots themed after Neon Genesis Evangelion characters, powered by N
 
 ## Railway Deployment
 
-Each bot runs as a separate Railway service. Follow these steps:
+**Simple Approach: Run all 3 bots from ONE Railway service!**
 
-### Step 1: Create the First Railway Project
+### Step 1: Create ONE Railway Project
 
 1. Go to https://railway.app/
 2. Sign in with GitHub
 3. Click **"New Project"** → **"Deploy from GitHub"**
 4. Select the `discord-evangelion-themed-bots` repository
-5. Choose a service name (e.g., "shinji-bot")
-6. Click **"Deploy"**
+5. Click **"Deploy"**
 
 ### Step 2: Configure Environment Variables
 
-After deployment:
+After deployment, go to **Settings** → **Variables** and add:
 
-1. Go to the service **Settings** → **Variables**
-2. Add these environment variables:
-   ```
-   DISCORD_TOKEN_SHINJI=<your_shinji_bot_token>
-   NVIDIA_API_KEY=<your_nvidia_nim_api_key>
-   NVIDIA_MODEL=meta/llama2-70b
-   ```
+```
+DISCORD_TOKEN_SHINJI=<your_shinji_bot_token>
+DISCORD_TOKEN_ASUKA=<your_asuka_bot_token>
+DISCORD_TOKEN_REI=<your_rei_bot_token>
+NVIDIA_API_KEY=<your_nvidia_nim_api_key>
+NVIDIA_MODEL=meta/llama2-70b
+```
 
 ### Step 3: Set Start Command
 
-1. Go to service **Settings** → **Deploy**
-2. Set the **Start Command** to: `python shinji.py`
-3. Save and redeploy
+Go to **Settings** → **Deploy** and set the **Start Command**:
+```
+python run_all_bots.py
+```
 
-### Step 4: Repeat for Asuka and Rei
+### Step 4: Deploy!
 
-Create two more Railway services from the same GitHub repo with:
+Save and redeploy. All 3 bots will start automatically! 🤖
 
-**Asuka Service:**
-- Environment Variables:
-  ```
-  DISCORD_TOKEN_ASUKA=<your_asuka_bot_token>
-  NVIDIA_API_KEY=<your_nvidia_nim_api_key>
-  NVIDIA_MODEL=meta/llama2-70b
-  ```
-- Start Command: `python asuka.py`
+---
 
-**Rei Service:**
-- Environment Variables:
-  ```
-  DISCORD_TOKEN_REI=<your_rei_bot_token>
-  NVIDIA_API_KEY=<your_nvidia_nim_api_key>
-  NVIDIA_MODEL=meta/llama2-70b
-  ```
-- Start Command: `python rei.py`
+**That's it!** All 3 bots (Shinji, Asuka, Rei) will be online simultaneously from a single Railway service.
 
-### Tips
+### Notes
 
-- All three services can use the **same NVIDIA_API_KEY** (they share the quota)
-- Each service needs its **own Discord token** and **unique DISCORD_TOKEN variable**
-- Railway will auto-redeploy when you push to GitHub
-- Monitor logs in Railway to check for errors
+- The launcher script (`run_all_bots.py`) runs all 3 bots in parallel using threading
+- If a bot crashes, it will automatically restart after 5 seconds
+- All bots share the same NVIDIA API key and Railway resources
+- Much simpler to manage than 3 separate services!
 
 ## NVIDIA NIM Models
 

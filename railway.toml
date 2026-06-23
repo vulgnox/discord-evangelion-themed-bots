@@ -6,4 +6,4 @@ builder = "nixpacks"
 
 [deploy]
 restartPolicyType = "always"
-startCommand = "python shinji.py"
+startCommand = "python run_all_bots.py"
