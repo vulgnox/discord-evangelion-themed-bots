@@ -3,7 +3,15 @@ import re
 
 
 MAX_BOT_CHAIN_DEPTH = 3
-CHAIN_MARKER_RE = re.compile(r"\s*\[eva-chain:(\d+)\]\s*$")
+VISIBLE_CHAIN_MARKER_RE = re.compile(r"\s*\[eva-chain:(\d+)\]\s*$")
+INVISIBLE_CHAIN_MARKER_PREFIX = "\u2063\u2063"
+INVISIBLE_CHAIN_MARKER_UNIT = "\u200b"
+INVISIBLE_CHAIN_MARKER_SUFFIX = "\u2063"
+INVISIBLE_CHAIN_MARKER_RE = re.compile(
+    rf"\s*{INVISIBLE_CHAIN_MARKER_PREFIX}"
+    rf"({INVISIBLE_CHAIN_MARKER_UNIT}+)"
+    rf"{INVISIBLE_CHAIN_MARKER_SUFFIX}\s*$"
+)
 
 PILOT_PROFILES = {
     "shinji": {
@@ -40,6 +48,7 @@ KNOWN_PEOPLE_CONTEXT = f"""
 - Shinji pilots Evangelion Unit-01. Asuka pilots Evangelion Unit-02. Rei pilots Evangelion Unit-00.
 - If a message mentions another pilot, understand the mention as that pilot's name and react to them in character.
 - {OWNER_DISPLAY_NAME} is your {OWNER_ROLE_DESCRIPTION}. If this person speaks to you, recognize their authority as NERV communication context while still responding as yourself.
+- If incoming communication context says "sender is NERV handler: yes", the sender is {OWNER_DISPLAY_NAME}. Do not treat them as a stranger.
 - Messages may arrive through an unfamiliar communication channel. Do not call it Discord, the internet, a server, AI, or bot behavior in-character.
 """
 
@@ -58,7 +67,14 @@ def build_user_prompt(message):
     cleaned_content = strip_chain_marker(resolve_mentions(message))
     sender_name = display_name_for_user(message.author)
     sender_kind = "bot-controlled pilot" if getattr(message.author, "bot", False) else "human"
-    owner_status = "yes" if is_owner(message.author) else "no"
+    sender_is_owner = is_owner(message.author)
+    owner_status = "yes" if sender_is_owner else "no"
+    owner_instruction = (
+        f"This sender is {OWNER_DISPLAY_NAME}, your {OWNER_ROLE_DESCRIPTION}. "
+        "Do not ask who they are."
+        if sender_is_owner
+        else f"The NERV handler is {OWNER_DISPLAY_NAME}, your {OWNER_ROLE_DESCRIPTION}."
+    )
 
     return (
         "Incoming communication context:\n"
@@ -66,7 +82,8 @@ def build_user_prompt(message):
         f"- sender type: {sender_kind}\n"
         f"- sender is NERV handler: {owner_status}\n"
         f"- NERV handler name: {OWNER_DISPLAY_NAME}\n"
-        f"- NERV handler role: {OWNER_ROLE_DESCRIPTION}\n\n"
+        f"- NERV handler role: {OWNER_ROLE_DESCRIPTION}\n"
+        f"- handler instruction: {owner_instruction}\n\n"
         "Message:\n"
         f"{cleaned_content}"
     )
@@ -75,7 +92,16 @@ def build_user_prompt(message):
 def format_bot_reply(reply, source_message):
     clean_reply = strip_chain_marker(reply).strip()
     next_depth = get_chain_depth(source_message.content) + 1
-    return f"{clean_reply} [eva-chain:{next_depth}]"
+    return f"{clean_reply or '...'}{build_chain_marker(next_depth)}"
+
+
+def build_chain_marker(depth):
+    clamped_depth = max(1, min(depth, MAX_BOT_CHAIN_DEPTH))
+    return (
+        INVISIBLE_CHAIN_MARKER_PREFIX
+        + (INVISIBLE_CHAIN_MARKER_UNIT * clamped_depth)
+        + INVISIBLE_CHAIN_MARKER_SUFFIX
+    )
 
 
 def resolve_mentions(message):
@@ -128,14 +154,20 @@ def is_owner(user):
 
 
 def get_chain_depth(content):
-    match = CHAIN_MARKER_RE.search(content or "")
-    if not match:
-        return 0
-    return int(match.group(1))
+    hidden_match = INVISIBLE_CHAIN_MARKER_RE.search(content or "")
+    if hidden_match:
+        return len(hidden_match.group(1))
+
+    visible_match = VISIBLE_CHAIN_MARKER_RE.search(content or "")
+    if visible_match:
+        return int(visible_match.group(1))
+
+    return 0
 
 
 def strip_chain_marker(content):
-    return CHAIN_MARKER_RE.sub("", content or "").strip()
+    without_hidden = INVISIBLE_CHAIN_MARKER_RE.sub("", content or "")
+    return VISIBLE_CHAIN_MARKER_RE.sub("", without_hidden).strip()
 
 
 def normalize_name(text):

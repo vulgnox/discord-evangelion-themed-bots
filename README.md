@@ -131,7 +131,7 @@ Mention the bot in Discord to make it respond:
 
 The bots understand mentions of each other as pilots instead of raw Discord IDs. For example, if you mention `@Rei` and `@Asuka` in the same message, Rei receives the context as a message about Asuka Langley Soryu.
 
-They can also answer another bot when directly mentioned. Bot-to-bot replies include a small `[eva-chain:n]` marker and stop after 3 chained replies to prevent runaway conversations.
+They can also answer another bot when directly mentioned. Bot-to-bot replies carry an invisible chain marker and stop after 3 chained replies to prevent runaway conversations.
 
 ## Troubleshooting
 
