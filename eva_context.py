@@ -47,6 +47,7 @@ KNOWN_PEOPLE_CONTEXT = f"""
 - Shinji Ikari, Asuka Langley Soryu, and Rei Ayanami are the other Eva pilots. They are real people in your world, not numbers, IDs, bots, or unknown users.
 - Shinji pilots Evangelion Unit-01. Asuka pilots Evangelion Unit-02. Rei pilots Evangelion Unit-00.
 - If a message mentions another pilot, understand the mention as that pilot's name and react to them in character.
+- If communication context lists usable pilot mentions, use those exact handles when the handler asks you to mention, call, ping, or directly address another pilot.
 - {OWNER_DISPLAY_NAME} is your {OWNER_ROLE_DESCRIPTION}. If this person speaks to you, recognize their authority as NERV communication context while still responding as yourself.
 - If incoming communication context says "sender is NERV handler: yes", the sender is {OWNER_DISPLAY_NAME}. Do not treat them as a stranger.
 - Messages may arrive through an unfamiliar communication channel. Do not call it Discord, the internet, a server, AI, or bot behavior in-character.
@@ -63,7 +64,7 @@ def can_respond_to_message(message, bot_user):
     return True
 
 
-def build_user_prompt(message):
+def build_user_prompt(message, bot_user=None):
     cleaned_content = strip_chain_marker(resolve_mentions(message))
     sender_name = display_name_for_user(message.author)
     sender_kind = "bot-controlled pilot" if getattr(message.author, "bot", False) else "human"
@@ -83,14 +84,17 @@ def build_user_prompt(message):
         f"- sender is NERV handler: {owner_status}\n"
         f"- NERV handler name: {OWNER_DISPLAY_NAME}\n"
         f"- NERV handler role: {OWNER_ROLE_DESCRIPTION}\n"
-        f"- handler instruction: {owner_instruction}\n\n"
+        f"- handler instruction: {owner_instruction}\n"
+        f"{build_channel_context(message)}"
+        f"{build_usable_mentions_context(message, excluded_user=bot_user)}\n"
         "Message:\n"
         f"{cleaned_content}"
     )
 
 
-def format_bot_reply(reply, source_message):
+def format_bot_reply(reply, source_message, bot_user=None):
     clean_reply = strip_chain_marker(reply).strip()
+    clean_reply = restore_pilot_mentions(clean_reply, source_message, bot_user)
     next_depth = get_chain_depth(source_message.content) + 1
     return f"{clean_reply or '...'}{build_chain_marker(next_depth)}"
 
@@ -115,6 +119,77 @@ def resolve_mentions(message):
         for pattern in mention_patterns:
             content = content.replace(pattern, f"@{label}")
     return content
+
+
+def restore_pilot_mentions(content, message, bot_user=None):
+    if not content:
+        return content
+
+    updated = content
+    for user in pilot_mention_users(message, excluded_user=bot_user):
+        token = mention_token_for_user(user)
+        if token in updated:
+            continue
+
+        for candidate in mention_replacement_candidates(user):
+            pattern = re.compile(rf"(?<![@\w]){re.escape(candidate)}(?!\w)", re.IGNORECASE)
+            updated, replacements = pattern.subn(token, updated, count=1)
+            if replacements:
+                break
+
+    return updated
+
+
+def build_channel_context(message):
+    channel = getattr(message, "channel", None)
+    channel_name = getattr(channel, "name", None)
+    if not channel_name:
+        return ""
+    return f"- channel: #{channel_name}\n"
+
+
+def build_usable_mentions_context(message, excluded_user=None):
+    mention_lines = []
+    for user in pilot_mention_users(message, excluded_user=excluded_user):
+        pilot_name = display_name_for_user(user)
+        mention_lines.append(f"  - {pilot_name} -> {mention_token_for_user(user)}")
+
+    if not mention_lines:
+        return "- usable pilot mentions: none\n\n"
+
+    return "- usable pilot mentions:\n" + "\n".join(mention_lines) + "\n\n"
+
+
+def pilot_mention_users(message, excluded_user=None):
+    seen_pilots = set()
+    users = []
+    excluded_id = str(getattr(excluded_user, "id", "")) if excluded_user else None
+
+    for user in getattr(message, "mentions", []):
+        if excluded_id and str(getattr(user, "id", "")) == excluded_id:
+            continue
+
+        pilot_name = display_name_for_user(user)
+        if not pilot_name_for_text(pilot_name):
+            continue
+
+        if pilot_name in seen_pilots:
+            continue
+
+        seen_pilots.add(pilot_name)
+        users.append(user)
+
+    return users
+
+
+def mention_replacement_candidates(user):
+    pilot_name = display_name_for_user(user)
+    first_name = pilot_name.split()[0]
+    return (pilot_name, first_name)
+
+
+def mention_token_for_user(user):
+    return f"<@{user.id}>"
 
 
 def display_name_for_user(user):

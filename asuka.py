@@ -6,11 +6,10 @@ from dotenv import load_dotenv
 # Load environment variables from .env file
 load_dotenv()
 
+from bot_runtime import reply_with_model  # noqa: E402
 from eva_context import (  # noqa: E402
     KNOWN_PEOPLE_CONTEXT,
-    build_user_prompt,
     can_respond_to_message,
-    format_bot_reply,
 )
 
 # Load configuration from environment variables
@@ -90,17 +89,13 @@ async def on_message(message):
         return
 
     print(f"Received message from {message.author}: {message.content}")
-    try:
-        response = client.chat.completions.create(
-            model=NVIDIA_MODEL,
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": build_user_prompt(message)}
-            ]
-        )
-        await message.channel.send(format_bot_reply(response.choices[0].message.content, message))
-    except Exception as e:
-        print(f"Error calling NVIDIA API: {e}")
-        await message.channel.send("What do you want?! I'm busy! Baka!")
+    await reply_with_model(
+        message=message,
+        bot_user=bot.user,
+        client=client,
+        model=NVIDIA_MODEL,
+        system_prompt=system_prompt,
+        fallback_message="What do you want?! I'm busy! Baka!",
+    )
 
 bot.run(DISCORD_TOKEN)

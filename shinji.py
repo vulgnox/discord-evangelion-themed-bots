@@ -6,11 +6,10 @@ from dotenv import load_dotenv
 # Load environment variables from .env file
 load_dotenv()
 
+from bot_runtime import reply_with_model  # noqa: E402
 from eva_context import (  # noqa: E402
     KNOWN_PEOPLE_CONTEXT,
-    build_user_prompt,
     can_respond_to_message,
-    format_bot_reply,
 )
 
 # Load configuration from environment variables
@@ -101,22 +100,14 @@ async def on_message(message):
         return
 
     print(f"Received message from {message.author}: {message.content}")
-    try:
-        # Send the message to NVIDIA NIM
-        response = client.chat.completions.create(
-            model=NVIDIA_MODEL,
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": build_user_prompt(message)}
-            ]
-        )
-
-        # Get the reply and send it to Discord
-        reply = response.choices[0].message.content
-        await message.channel.send(format_bot_reply(reply, message))
-    except Exception as e:
-        print(f"Error calling NVIDIA API: {e}")
-        await message.channel.send(f"... i can't respond right now... sorry...")
+    await reply_with_model(
+        message=message,
+        bot_user=bot.user,
+        client=client,
+        model=NVIDIA_MODEL,
+        system_prompt=system_prompt,
+        fallback_message="... i can't respond right now... sorry...",
+    )
 
 # Start the bot
 bot.run(DISCORD_TOKEN)

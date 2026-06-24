@@ -7,6 +7,7 @@ from eva_context import (
     format_bot_reply,
     get_chain_depth,
     resolve_mentions,
+    restore_pilot_mentions,
     strip_chain_marker,
 )
 
@@ -24,10 +25,11 @@ class FakeUser:
 
 
 class FakeMessage:
-    def __init__(self, content, author, mentions):
+    def __init__(self, content, author, mentions, channel_name=None):
         self.content = content
         self.author = author
         self.mentions = mentions
+        self.channel = type("FakeChannel", (), {"name": channel_name})() if channel_name else None
 
 
 class EvaContextTest(unittest.TestCase):
@@ -86,6 +88,45 @@ class EvaContextTest(unittest.TestCase):
 
         self.assertEqual(get_chain_depth(message_content), 2)
         self.assertEqual(strip_chain_marker(message_content), "legacy reply")
+
+    def test_prompt_lists_usable_pilot_mentions(self):
+        asuka = FakeUser(1, "Asuka Bot", "Asuka")
+        shinji = FakeUser(2, "Shinji Bot", "Shinji")
+        rei = FakeUser(3, "Rei Bot", "Rei")
+        handler = FakeUser(99, "nox")
+        message = FakeMessage(
+            "<@1> mention <@2> and <@3>",
+            handler,
+            [asuka, shinji, rei],
+            channel_name="bridge-chatter",
+        )
+
+        prompt = build_user_prompt(message, bot_user=asuka)
+
+        self.assertIn("- channel: #bridge-chatter", prompt)
+        self.assertNotIn("Asuka Langley Soryu -> <@1>", prompt)
+        self.assertIn("Shinji Ikari -> <@2>", prompt)
+        self.assertIn("Rei Ayanami -> <@3>", prompt)
+
+    def test_restore_pilot_mentions_excludes_current_bot(self):
+        asuka = FakeUser(1, "Asuka Bot", "Asuka")
+        shinji = FakeUser(2, "Shinji Bot", "Shinji")
+        rei = FakeUser(3, "Rei Bot", "Rei")
+        handler = FakeUser(99, "nox")
+        message = FakeMessage("<@1> mention <@2> and <@3>", handler, [asuka, shinji, rei])
+
+        reply = restore_pilot_mentions("Shinji and Rei, what about them?", message, bot_user=asuka)
+
+        self.assertEqual(reply, "<@2> and <@3>, what about them?")
+
+    def test_restore_pilot_mentions_ignores_unavailable_pilots(self):
+        asuka = FakeUser(1, "Asuka Bot", "Asuka")
+        handler = FakeUser(99, "nox")
+        message = FakeMessage("<@1> say something", handler, [asuka])
+
+        reply = restore_pilot_mentions("Shinji should hear this.", message, bot_user=asuka)
+
+        self.assertEqual(reply, "Shinji should hear this.")
 
 
 if __name__ == "__main__":

@@ -100,7 +100,7 @@ Save and redeploy. All 3 bots will start automatically! 🤖
 ## NVIDIA NIM Models
 
 Available free models:
-- `meta/llama2-70b` (default, recommended)
+- `meta/llama2-70b` (default, required for the intended character quality)
 - `mistralai/mistral-7b-instruct-v0.2`
 - `nvidia/llama2-70b-steerlm-chat-fp8`
 
@@ -116,8 +116,10 @@ To create Discord bot tokens:
 4. Copy the token and add to your `.env` file
 5. Go to **OAuth2** → **URL Generator**
    - Scopes: `bot`
-   - Permissions: `Send Messages`, `Read Messages/View Channels`
+   - Permissions: `View Channels`, `Send Messages`, `Read Message History`, `Add Reactions`, `Use External Emojis`, `Use External Stickers`, `Attach Files`, `Embed Links`
 6. Use the generated URL to invite the bot to your server
+
+Discord will always show the `APP` label for bot accounts. To make them behave more like normal server members, give each bot a normal server role with access to the channels where they should talk.
 
 ## Usage
 
@@ -130,6 +132,8 @@ Mention the bot in Discord to make it respond:
 ```
 
 The bots understand mentions of each other as pilots instead of raw Discord IDs. For example, if you mention `@Rei` and `@Asuka` in the same message, Rei receives the context as a message about Asuka Langley Soryu.
+
+If you mention multiple pilots in a message, replies can use the actual Discord mention handles for the other pilots instead of only saying their names.
 
 They can also answer another bot when directly mentioned. Bot-to-bot replies carry an invisible chain marker and stop after 3 chained replies to prevent runaway conversations.
 
