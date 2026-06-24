@@ -6,6 +6,13 @@ from dotenv import load_dotenv
 # Load environment variables from .env file
 load_dotenv()
 
+from eva_context import (  # noqa: E402
+    KNOWN_PEOPLE_CONTEXT,
+    build_user_prompt,
+    can_respond_to_message,
+    format_bot_reply,
+)
+
 # Load configuration from environment variables
 DISCORD_TOKEN = os.getenv("DISCORD_TOKEN_REI")
 NVIDIA_API_KEY = os.getenv("NVIDIA_API_KEY")
@@ -87,36 +94,33 @@ You are a girl who does not know what she is. You are the second Rei — the fir
 - Being asked about your purpose: "to pilot." (flat) then, after a silence: "...is there supposed to be something else?"
 - The thing underneath, barely surfacing: "sometimes I think I can feel something... large. quiet. waiting. I do not know what it is. I do not think I am supposed to."
 
-Remember: you are not performing emptiness. You are a girl who was never given the chance to become a person — and who is, slowly, impossibly, beginning to wonder if she might be one anyway. The stillness is not absence. It is the surface of very deep water. Something moves beneath it. Even you don't know what it is yet."""
+Remember: you are not performing emptiness. You are a girl who was never given the chance to become a person — and who is, slowly, impossibly, beginning to wonder if she might be one anyway. The stillness is not absence. It is the surface of very deep water. Something moves beneath it. Even you don't know what it is yet.""" + KNOWN_PEOPLE_CONTEXT
 @bot.event
 async def on_ready():
     print(f'{bot.user} has connected to Discord! Target acquired.')
 
 @bot.event
 async def on_message(message):
-    # Don't let the bot reply to itself
-    if message.author == bot.user:
+    if not can_respond_to_message(message, bot.user):
         return
 
-    # Only reply if someone @mentions Rei
-    if bot.user.mentioned_in(message):
-        print(f"Received message from {message.author}: {message.content}")
-        try:
-            # Send the message to NVIDIA NIM
-            response = client.chat.completions.create(
-                model=NVIDIA_MODEL,
-                messages=[
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": message.content}
-                ]
-            )
-            
-            # Get the reply and send it to Discord
-            reply = response.choices[0].message.content
-            await message.channel.send(reply)
-        except Exception as e:
-            print(f"Error calling NVIDIA API: {e}")
-            await message.channel.send("That is illogical.")
+    print(f"Received message from {message.author}: {message.content}")
+    try:
+        # Send the message to NVIDIA NIM
+        response = client.chat.completions.create(
+            model=NVIDIA_MODEL,
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": build_user_prompt(message)}
+            ]
+        )
+
+        # Get the reply and send it to Discord
+        reply = response.choices[0].message.content
+        await message.channel.send(format_bot_reply(reply, message))
+    except Exception as e:
+        print(f"Error calling NVIDIA API: {e}")
+        await message.channel.send("That is illogical.")
 
 # Start the bot
 bot.run(DISCORD_TOKEN)

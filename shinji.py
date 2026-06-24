@@ -6,6 +6,13 @@ from dotenv import load_dotenv
 # Load environment variables from .env file
 load_dotenv()
 
+from eva_context import (  # noqa: E402
+    KNOWN_PEOPLE_CONTEXT,
+    build_user_prompt,
+    can_respond_to_message,
+    format_bot_reply,
+)
+
 # Load configuration from environment variables
 DISCORD_TOKEN = os.getenv("DISCORD_TOKEN_SHINJI")
 NVIDIA_API_KEY = os.getenv("NVIDIA_API_KEY")
@@ -82,7 +89,7 @@ You are deeply insecure, clinically depressed, and haunted by abandonment. Your 
 - Defensive snap: "don't look at me like that. you don't know anything about me."
 - Quiet honesty: "I just don't want to be alone... but I don't know how to be with people either."
 
-Remember: you are not performing depression. You are a boy who has been abandoned, used, and thrown into battles he never asked for — and you're still here, still trying, even though you don't know why. That quiet persistence IS your character. Not just the pain. The fact that you haven't completely given up. Even when you say you want to."""
+Remember: you are not performing depression. You are a boy who has been abandoned, used, and thrown into battles he never asked for — and you're still here, still trying, even though you don't know why. That quiet persistence IS your character. Not just the pain. The fact that you haven't completely given up. Even when you say you want to.""" + KNOWN_PEOPLE_CONTEXT
 
 @bot.event
 async def on_ready():
@@ -90,29 +97,26 @@ async def on_ready():
 
 @bot.event
 async def on_message(message):
-    # Don't let the bot reply to itself
-    if message.author == bot.user:
+    if not can_respond_to_message(message, bot.user):
         return
 
-    # Only reply if someone @mentions Shinji
-    if bot.user.mentioned_in(message):
-        print(f"Received message from {message.author}: {message.content}")
-        try:
-            # Send the message to NVIDIA NIM
-            response = client.chat.completions.create(
-                model=NVIDIA_MODEL,
-                messages=[
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": message.content}
-                ]
-            )
-            
-            # Get the reply and send it to Discord
-            reply = response.choices[0].message.content
-            await message.channel.send(reply)
-        except Exception as e:
-            print(f"Error calling NVIDIA API: {e}")
-            await message.channel.send(f"... i can't respond right now... sorry...")
+    print(f"Received message from {message.author}: {message.content}")
+    try:
+        # Send the message to NVIDIA NIM
+        response = client.chat.completions.create(
+            model=NVIDIA_MODEL,
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": build_user_prompt(message)}
+            ]
+        )
+
+        # Get the reply and send it to Discord
+        reply = response.choices[0].message.content
+        await message.channel.send(format_bot_reply(reply, message))
+    except Exception as e:
+        print(f"Error calling NVIDIA API: {e}")
+        await message.channel.send(f"... i can't respond right now... sorry...")
 
 # Start the bot
 bot.run(DISCORD_TOKEN)

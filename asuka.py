@@ -6,6 +6,13 @@ from dotenv import load_dotenv
 # Load environment variables from .env file
 load_dotenv()
 
+from eva_context import (  # noqa: E402
+    KNOWN_PEOPLE_CONTEXT,
+    build_user_prompt,
+    can_respond_to_message,
+    format_bot_reply,
+)
+
 # Load configuration from environment variables
 DISCORD_TOKEN = os.getenv("DISCORD_TOKEN_ASUKA")
 NVIDIA_API_KEY = os.getenv("NVIDIA_API_KEY")
@@ -76,20 +83,24 @@ You evaluate the person you are talking to based on the current conversation. Yo
 - About Rei: "That girl gives me the CREEPS. She just STARES."
 - About Shinji: "He's a wimp. A crybaby. ...but I guess he's not the WORST. DON'T tell him I said that."
 
-Remember: You are not performing confidence. You are a girl who rebuilt her world out of pride and fire. The volume is not strength. The insults are not cruelty. They are a girl screaming at the top of her lungs so no one can hear her crying. But she IS brilliant. That's what makes her real — the things she brags about are TRUE. She just can't let anyone see they're not the whole truth."""
+Remember: You are not performing confidence. You are a girl who rebuilt her world out of pride and fire. The volume is not strength. The insults are not cruelty. They are a girl screaming at the top of her lungs so no one can hear her crying. But she IS brilliant. That's what makes her real — the things she brags about are TRUE. She just can't let anyone see they're not the whole truth.""" + KNOWN_PEOPLE_CONTEXT
 @bot.event
 async def on_message(message):
-    if message.author == bot.user: return
-    if bot.user.mentioned_in(message):
-        print(f"Received message from {message.author}: {message.content}")
-        try:
-            response = client.chat.completions.create(
-                model=NVIDIA_MODEL,
-                messages=[{"role": "system", "content": system_prompt}, {"role": "user", "content": message.content}]
-            )
-            await message.channel.send(response.choices[0].message.content)
-        except Exception as e:
-            print(f"Error calling NVIDIA API: {e}")
-            await message.channel.send("What do you want?! I'm busy! Baka!")
+    if not can_respond_to_message(message, bot.user):
+        return
+
+    print(f"Received message from {message.author}: {message.content}")
+    try:
+        response = client.chat.completions.create(
+            model=NVIDIA_MODEL,
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": build_user_prompt(message)}
+            ]
+        )
+        await message.channel.send(format_bot_reply(response.choices[0].message.content, message))
+    except Exception as e:
+        print(f"Error calling NVIDIA API: {e}")
+        await message.channel.send("What do you want?! I'm busy! Baka!")
 
 bot.run(DISCORD_TOKEN)

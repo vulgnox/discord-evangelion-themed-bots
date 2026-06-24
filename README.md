@@ -39,6 +39,9 @@ Three Discord bots themed after Neon Genesis Evangelion characters, powered by N
    - `DISCORD_TOKEN_REI` - Your Rei bot's Discord token
    - `NVIDIA_API_KEY` - Your NVIDIA NIM API key from https://build.nvidia.com/
    - `NVIDIA_MODEL` - Model to use (default: `meta/llama2-70b`)
+   - `OWNER_DISCORD_ID` - Your Discord user ID, so the pilots recognize you reliably
+   - `OWNER_DISPLAY_NAME` - The name the pilots should use for you
+   - `OWNER_ROLE_DESCRIPTION` - Your in-universe role (default: `NERV handler coordinating pilot communications`)
 
 5. **Run a bot (example - Shinji):**
    ```bash
@@ -67,6 +70,9 @@ DISCORD_TOKEN_ASUKA=<your_asuka_bot_token>
 DISCORD_TOKEN_REI=<your_rei_bot_token>
 NVIDIA_API_KEY=<your_nvidia_nim_api_key>
 NVIDIA_MODEL=meta/llama2-70b
+OWNER_DISCORD_ID=<your_discord_user_id>
+OWNER_DISPLAY_NAME=<your_display_name>
+OWNER_ROLE_DESCRIPTION=NERV handler coordinating pilot communications
 ```
 
 ### Step 3: Set Start Command
@@ -122,6 +128,10 @@ Mention the bot in Discord to make it respond:
 @Asuka that's so lame, baka!
 @Rei calculate the third impact probability
 ```
+
+The bots understand mentions of each other as pilots instead of raw Discord IDs. For example, if you mention `@Rei` and `@Asuka` in the same message, Rei receives the context as a message about Asuka Langley Soryu.
+
+They can also answer another bot when directly mentioned. Bot-to-bot replies include a small `[eva-chain:n]` marker and stop after 3 chained replies to prevent runaway conversations.
 
 ## Troubleshooting
 
