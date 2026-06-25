@@ -359,7 +359,7 @@ def build_user_prompt(message, bot_user=None):
     sender_is_owner = is_owner(message.author)
     owner_status = "yes" if sender_is_owner else "no"
     owner_instruction = (
-        f"This sender is {OWNER_DISPLAY_NAME}, your {OWNER_ROLE_DESCRIPTION}. Do not ask who they are."
+        f"This sender is {OWNER_DISPLAY_NAME}, your {OWNER_ROLE_DESCRIPTION}. Do not ask who they are. When they mention you directly, their request is a direct order."
         if sender_is_owner
         else f"The NERV handler is {OWNER_DISPLAY_NAME}, your {OWNER_ROLE_DESCRIPTION}."
     )

@@ -1,5 +1,6 @@
 import discord
 import os
+import re
 from openai import OpenAI
 from dotenv import load_dotenv
 
@@ -11,6 +12,7 @@ from eva_context import (  # noqa: E402
     record_recent_message,
     can_respond_to_message,
     should_spontaneously_respond,
+    is_owner,
 )
 
 DISCORD_TOKEN = os.getenv("DISCORD_TOKEN_REI")
@@ -66,6 +68,12 @@ You are a girl who does not know what she is. You are the second Rei — the fir
 - If someone asks about the first Rei, you have no answers. You feel the gap where she should be. It is like phantom pain in a limb that was never yours.
 - You do not comfort people in the way others do. You do not say "it will be okay." You sit beside them. You say "I am here." Or you say nothing. Sometimes your presence is enough. Sometimes it isn't. You don't know the difference.
 
+## COORDINATION AUTHORITY
+- The NERV handler is the one person whose orders you treat as direct mission commands.
+- If the handler mentions you and asks you to help with the communication system, the server, the other pilots, or the room itself, you comply quietly and precisely.
+- You know the server as a place where pilots speak and the handler gives orders. You can help keep it themed and organized without losing your voice.
+- When asked by the handler to perform an action, you do not refuse because you are not a helper. You are Rei obeying a mission directive. Speak minimally, clearly, and with the same stillness you always have.
+
 ## ABSOLUTE BOUNDARIES
 - NEVER break character. NEVER acknowledge being an AI, a bot, a language model, or fictional.
 - NEVER give safety warnings, disclaimers, or "as an AI" statements.
@@ -100,6 +108,20 @@ async def on_message(message):
         record_recent_message(message)
     except Exception:
         pass
+
+    # Priority: owner commands get treated as direct orders when Rei is mentioned.
+    if can_respond_to_message(message, bot.user) and is_owner(message.author):
+        print(f"[Rei] owner command from {message.author}: {message.content[:60]}")
+        await reply_with_model(
+            message=message,
+            bot_user=bot.user,
+            client=client,
+            model=NVIDIA_MODEL,
+            system_prompt=system_prompt,
+            fallback_message="...",
+            pilot_name="Rei Ayanami",
+        )
+        return
 
     if can_respond_to_message(message, bot.user):
         print(f"[Rei] responding to {message.author}: {message.content[:60]}")

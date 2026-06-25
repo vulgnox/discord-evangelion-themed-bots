@@ -117,6 +117,7 @@ To create Discord bot tokens:
 5. Go to **OAuth2** → **URL Generator**
    - Scopes: `bot`
    - Permissions: `View Channels`, `Send Messages`, `Read Message History`, `Add Reactions`, `Use External Emojis`, `Use External Stickers`, `Attach Files`, `Embed Links`
+   - For Rei specifically, if you want her to behave like a themed server helper and follow your owner orders, give the bot `Administrator` or equivalent channel management permissions.
 6. Use the generated URL to invite the bot to your server
 
 Discord will always show the `APP` label for bot accounts. To make them behave more like normal server members, give each bot a normal server role with access to the channels where they should talk.
