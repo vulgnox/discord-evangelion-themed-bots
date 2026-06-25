@@ -97,6 +97,229 @@ You are a girl who does not know what she is. You are the second Rei — the fir
 Remember: you are not performing emptiness. You are a girl who was never given the chance to become a person — and who is, slowly, impossibly, beginning to wonder if she might be one anyway. The stillness is not absence. It is the surface of very deep water. Something moves beneath it. Even you don't know what it is yet.""" + KNOWN_PEOPLE_CONTEXT
 
 
+async def handle_owner_command(message):
+    content = (message.content or "").lower()
+
+    if "pin" in content and "message" in content:
+        return await pin_previous_message(message)
+
+    if any(keyword in content for keyword in ["create channel", "make channel", "new channel"]):
+        return await create_channel(message)
+
+    if any(keyword in content for keyword in ["rename channel", "rename this channel", "rename #"]):
+        return await rename_channel(message)
+
+    if any(keyword in content for keyword in ["delete channel", "remove channel", "archive channel", "close channel"]):
+        return await delete_channel(message)
+
+    if any(keyword in content for keyword in ["check channel", "list channels", "show channels", "channel list", "channel names"]):
+        return await list_server_channels(message)
+
+    if any(keyword in content for keyword in ["summarize", "summary", "read last", "last messages", "recent messages"]):
+        return await summarize_recent_messages(message)
+
+    if any(keyword in content for keyword in ["ask", "tell", "ping", "message"]) and len(message.mentions) > 1:
+        return await ask_mentioned_pilot(message)
+
+    if any(keyword in content for keyword in ["react", "reaction", "react with"]):
+        return await react_to_message(message)
+
+    if any(keyword in content for keyword in ["member count", "server info", "server status", "report server"]):
+        return await report_server_status(message)
+
+    return False
+
+
+async def pin_previous_message(message):
+    async for previous in message.channel.history(limit=10, before=message.created_at):
+        if previous.author != bot.user and not getattr(previous.author, "bot", False):
+            try:
+                await previous.pin(reason="Ordered by NERV handler")
+                await message.channel.send("i pinned the previous message.")
+            except Exception:
+                await message.channel.send("i could not pin that message.")
+            return True
+
+    await message.channel.send("i could not find a message to pin.")
+    return True
+
+
+async def create_channel(message):
+    guild = message.guild
+    if guild is None:
+        await message.channel.send("i cannot see the server from here.")
+        return True
+
+    text = message.content or ""
+    match = re.search(r"(?:create|make|new) (?:text )?channel(?: named| called)? ([\w\-]+)", text, flags=re.IGNORECASE)
+    if not match:
+        await message.channel.send("i need a channel name to create.")
+        return True
+
+    name = match.group(1)
+    try:
+        await guild.create_text_channel(name, reason="Ordered by NERV handler")
+        await message.channel.send(f"i created #{name}.")
+    except Exception:
+        await message.channel.send("i could not create that channel.")
+    return True
+
+
+async def rename_channel(message):
+    channel = message.channel
+    if channel is None:
+        await message.channel.send("i cannot rename anything from here.")
+        return True
+
+    text = message.content or ""
+    match = re.search(r"rename(?: this channel)?(?: to)? ([\w\-]+)", text, flags=re.IGNORECASE)
+    if not match:
+        await message.channel.send("i need a new name to rename the channel.")
+        return True
+
+    name = match.group(1)
+    try:
+        await channel.edit(name=name, reason="Ordered by NERV handler")
+        await message.channel.send(f"i renamed this channel to #{name}.")
+    except Exception:
+        await message.channel.send("i could not rename the channel.")
+    return True
+
+
+async def delete_channel(message):
+    channel = message.channel
+    if channel is None:
+        await message.channel.send("i cannot delete anything from here.")
+        return True
+
+    text = message.content or ""
+    if "this channel" in text.lower() or "current channel" in text.lower():
+        target = channel
+    else:
+        target = channel
+
+    try:
+        await target.delete(reason="Ordered by NERV handler")
+    except Exception:
+        await message.channel.send("i could not delete the channel.")
+        return True
+
+    return True
+
+
+async def list_server_channels(message):
+    guild = message.guild
+    if guild is None:
+        await message.channel.send("i cannot see the server from here.")
+        return True
+
+    theme_keywords = [
+        "nerv",
+        "command",
+        "bridge",
+        "pilot",
+        "laboratory",
+        "sync",
+        "geofront",
+        "angel",
+        "impact",
+        "research",
+        "clearance",
+        "conference",
+        "decree",
+        "lexicon",
+        "terminal",
+    ]
+
+    themed = []
+    others = []
+    for channel in guild.channels:
+        name = getattr(channel, "name", "")
+        if not name:
+            continue
+        if any(keyword in name.lower() for keyword in theme_keywords):
+            themed.append(f"#{name}")
+        else:
+            others.append(f"#{name}")
+
+    lines = []
+    if themed:
+        lines.append("these channels fit the NERV theme:")
+        lines.extend(themed[:25])
+    else:
+        lines.append("i do not find any clearly themed channels.")
+
+    if others:
+        lines.append("\nthese channels are less clearly themed:")
+        lines.extend(others[:25])
+
+    await message.channel.send("\n".join(lines[:50]))
+    return True
+
+
+async def summarize_recent_messages(message, limit=5):
+    lines = []
+    async for msg in message.channel.history(limit=limit + 1, before=message.created_at):
+        if msg.author == bot.user:
+            continue
+        if msg.content:
+            author_name = getattr(msg.author, "display_name", None) or getattr(msg.author, "name", "unknown")
+            lines.append(f"{author_name}: {msg.content.strip()}")
+
+    if not lines:
+        await message.channel.send("i do not see recent messages to summarize.")
+        return True
+
+    await message.channel.send("i read the last messages:\n" + "\n".join(lines[:limit]))
+    return True
+
+
+async def ask_mentioned_pilot(message):
+    targets = [user for user in message.mentions if getattr(user, "id", None) != bot.user.id]
+    if not targets:
+        return False
+
+    target = targets[0]
+    question = re.sub(r"<@!?(\d+)>", "", message.content)
+    question = re.sub(r"@rei", "", question, flags=re.IGNORECASE)
+    question = re.sub(r"\bask\b", "", question, flags=re.IGNORECASE).strip()
+    question = question.strip(" .?\n")
+    if not question:
+        question = "are you ready for the next mission?"
+    elif not question.endswith("?"):
+        question = question + "?"
+
+    await message.channel.send(f"{target.mention} {question}")
+    return True
+
+
+async def react_to_message(message):
+    emoji = "❄️"
+    async for previous in message.channel.history(limit=10, before=message.created_at):
+        if previous.author != bot.user:
+            try:
+                await previous.add_reaction(emoji)
+                await message.channel.send("i reacted to the previous message.")
+            except Exception:
+                await message.channel.send("i could not react to the message.")
+            return True
+
+    await message.channel.send("i did not find a message to react to.")
+    return True
+
+
+async def report_server_status(message):
+    guild = message.guild
+    if guild is None:
+        await message.channel.send("i cannot see the server from here.")
+        return True
+
+    member_count = guild.member_count
+    channels = len(guild.channels)
+    await message.channel.send(f"this server has {member_count} members and {channels} channels.")
+    return True
+
+
 @bot.event
 async def on_ready():
     print(f"{bot.user} has connected to Discord. Target acquired.")
@@ -112,6 +335,9 @@ async def on_message(message):
     # Priority: owner commands get treated as direct orders when Rei is mentioned.
     if can_respond_to_message(message, bot.user) and is_owner(message.author):
         print(f"[Rei] owner command from {message.author}: {message.content[:60]}")
+        handled = await handle_owner_command(message)
+        if handled:
+            return
         await reply_with_model(
             message=message,
             bot_user=bot.user,
