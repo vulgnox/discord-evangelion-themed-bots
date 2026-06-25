@@ -141,9 +141,12 @@ async def reply_with_model(
         except Exception:
             pass
 
+        return reply  # Return the raw LLM reply so Rei can extract actions
+
     except Exception as e:
         print(f"[{pilot_name}] API error: {e}")
         try:
             await message.channel.send(fallback_message)
         except Exception:
             pass
+        return None

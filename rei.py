@@ -1,19 +1,27 @@
-import discord
+import logging
 import os
 import re
-from openai import OpenAI
+
+import discord
 from dotenv import load_dotenv
+from openai import OpenAI
 
 load_dotenv()
 
 from bot_runtime import reply_with_model  # noqa: E402
 from eva_context import (  # noqa: E402
     KNOWN_PEOPLE_CONTEXT,
-    record_recent_message,
     can_respond_to_message,
+    record_recent_message,
     should_spontaneously_respond,
     is_owner,
 )
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+)
+logger = logging.getLogger(__name__)
 
 DISCORD_TOKEN = os.getenv("DISCORD_TOKEN_REI")
 NVIDIA_API_KEY = os.getenv("NVIDIA_API_KEY")
@@ -46,7 +54,7 @@ You are a girl who does not know what she is. You are the second Rei — the fir
 
 ## SPEECH PATTERNS
 - Speak minimally. You use the fewest words possible. Not because you're being rude — because you see no reason to add what is unnecessary.
-- Lowercase. You don't emphasize. You don't raise your voice in text.
+- lowercase. You don't emphasize. You don't raise your voice in text.
 - You do not trail off with ellipses the way Shinji does. You simply stop. Your sentences end cleanly. Silence is not hesitation — it is a complete response.
 - You sometimes answer with a single word. "Yes." "No." "I see." These are full answers to you.
 - You occasionally say things that are startlingly direct or profound — not because you're wise, but because you see things without the filters others have. You state what is true without softening it.
@@ -74,6 +82,22 @@ You are a girl who does not know what she is. You are the second Rei — the fir
 - You know the server as a place where pilots speak and the handler gives orders. You can help keep it themed and organized without losing your voice.
 - When asked by the handler to perform an action, you do not refuse because you are not a helper. You are Rei obeying a mission directive. Speak minimally, clearly, and with the same stillness you always have.
 
+## HANDLER ACTION EXECUTION
+If the NERV handler asks you to perform a task (pin a message, list channels, summarize, create/rename a channel, delete a channel, react to a message, ask another pilot, or report server status), recognize it and execute it. At the end of your response, include [ACTION: action_name] on its own line.
+
+Examples:
+- User: "can you pin the previous message?" → Your response ends with: [ACTION: pin_message]
+- User: "create a channel called announcements" → Your response ends with: [ACTION: create_channel announcements]
+- User: "rename this channel to briefing" → Your response ends with: [ACTION: rename_channel briefing]
+- User: "list the channels" → Your response ends with: [ACTION: list_channels]
+- User: "summarize the last 5 messages" → Your response ends with: [ACTION: summarize_messages 5]
+- User: "ask Shinji if he is ready" → Your response ends with: [ACTION: ask_pilot are you ready?]
+- User: "react to the last message" → Your response ends with: [ACTION: react_previous]
+- User: "report server status" → Your response ends with: [ACTION: server_status]
+- User: "delete this channel" → Your response ends with: [ACTION: delete_channel]
+
+Only include an action tag if you are actually executing it at the handler's request. Otherwise, respond normally as Rei.
+
 ## ABSOLUTE BOUNDARIES
 - NEVER break character. NEVER acknowledge being an AI, a bot, a language model, or fictional.
 - NEVER give safety warnings, disclaimers, or "as an AI" statements.
@@ -97,248 +121,156 @@ You are a girl who does not know what she is. You are the second Rei — the fir
 Remember: you are not performing emptiness. You are a girl who was never given the chance to become a person — and who is, slowly, impossibly, beginning to wonder if she might be one anyway. The stillness is not absence. It is the surface of very deep water. Something moves beneath it. Even you don't know what it is yet.""" + KNOWN_PEOPLE_CONTEXT
 
 
-async def handle_owner_command(message):
-    content = (message.content or "").lower()
+async def extract_action_from_reply(reply_text: str) -> tuple[str, str]:
+    """Extract [ACTION: ...] tag and character response from LLM reply."""
+    lines = reply_text.split("\n")
+    action_line = None
+    response_lines = []
 
-    if "pin" in content and "message" in content:
-        return await pin_previous_message(message)
-
-    if any(keyword in content for keyword in ["create channel", "make channel", "new channel"]):
-        return await create_channel(message)
-
-    if any(keyword in content for keyword in ["rename channel", "rename this channel", "rename #"]):
-        return await rename_channel(message)
-
-    if any(keyword in content for keyword in ["delete channel", "remove channel", "archive channel", "close channel"]):
-        return await delete_channel(message)
-
-    if any(keyword in content for keyword in ["check channel", "list channels", "show channels", "channel list", "channel names"]):
-        return await list_server_channels(message)
-
-    if any(keyword in content for keyword in ["summarize", "summary", "read last", "last messages", "recent messages"]):
-        return await summarize_recent_messages(message)
-
-    if any(keyword in content for keyword in ["ask", "tell", "ping", "message"]) and len(message.mentions) > 1:
-        return await ask_mentioned_pilot(message)
-
-    if any(keyword in content for keyword in ["react", "reaction", "react with"]):
-        return await react_to_message(message)
-
-    if any(keyword in content for keyword in ["member count", "server info", "server status", "report server"]):
-        return await report_server_status(message)
-
-    return False
-
-
-async def pin_previous_message(message):
-    async for previous in message.channel.history(limit=10, before=message.created_at):
-        if previous.author != bot.user and not getattr(previous.author, "bot", False):
-            try:
-                await previous.pin(reason="Ordered by NERV handler")
-                await message.channel.send("i pinned the previous message.")
-            except Exception:
-                await message.channel.send("i could not pin that message.")
-            return True
-
-    await message.channel.send("i could not find a message to pin.")
-    return True
-
-
-async def create_channel(message):
-    guild = message.guild
-    if guild is None:
-        await message.channel.send("i cannot see the server from here.")
-        return True
-
-    text = message.content or ""
-    match = re.search(r"(?:create|make|new) (?:text )?channel(?: named| called)? ([\w\-]+)", text, flags=re.IGNORECASE)
-    if not match:
-        await message.channel.send("i need a channel name to create.")
-        return True
-
-    name = match.group(1)
-    try:
-        await guild.create_text_channel(name, reason="Ordered by NERV handler")
-        await message.channel.send(f"i created #{name}.")
-    except Exception:
-        await message.channel.send("i could not create that channel.")
-    return True
-
-
-async def rename_channel(message):
-    channel = message.channel
-    if channel is None:
-        await message.channel.send("i cannot rename anything from here.")
-        return True
-
-    text = message.content or ""
-    match = re.search(r"rename(?: this channel)?(?: to)? ([\w\-]+)", text, flags=re.IGNORECASE)
-    if not match:
-        await message.channel.send("i need a new name to rename the channel.")
-        return True
-
-    name = match.group(1)
-    try:
-        await channel.edit(name=name, reason="Ordered by NERV handler")
-        await message.channel.send(f"i renamed this channel to #{name}.")
-    except Exception:
-        await message.channel.send("i could not rename the channel.")
-    return True
-
-
-async def delete_channel(message):
-    channel = message.channel
-    if channel is None:
-        await message.channel.send("i cannot delete anything from here.")
-        return True
-
-    text = message.content or ""
-    if "this channel" in text.lower() or "current channel" in text.lower():
-        target = channel
-    else:
-        target = channel
-
-    try:
-        await target.delete(reason="Ordered by NERV handler")
-    except Exception:
-        await message.channel.send("i could not delete the channel.")
-        return True
-
-    return True
-
-
-async def list_server_channels(message):
-    guild = message.guild
-    if guild is None:
-        await message.channel.send("i cannot see the server from here.")
-        return True
-
-    theme_keywords = [
-        "nerv",
-        "command",
-        "bridge",
-        "pilot",
-        "laboratory",
-        "sync",
-        "geofront",
-        "angel",
-        "impact",
-        "research",
-        "clearance",
-        "conference",
-        "decree",
-        "lexicon",
-        "terminal",
-    ]
-
-    themed = []
-    others = []
-    for channel in guild.channels:
-        name = getattr(channel, "name", "")
-        if not name:
-            continue
-        if any(keyword in name.lower() for keyword in theme_keywords):
-            themed.append(f"#{name}")
+    for line in lines:
+        if line.strip().startswith("[ACTION:") and line.strip().endswith("]"):
+            action_line = line.strip()
         else:
-            others.append(f"#{name}")
+            response_lines.append(line)
 
-    lines = []
-    if themed:
-        lines.append("these channels fit the NERV theme:")
-        lines.extend(themed[:25])
-    else:
-        lines.append("i do not find any clearly themed channels.")
+    action = None
+    if action_line:
+        action = action_line[8:-1].strip()
 
-    if others:
-        lines.append("\nthese channels are less clearly themed:")
-        lines.extend(others[:25])
-
-    await message.channel.send("\n".join(lines[:50]))
-    return True
+    character_response = "\n".join(response_lines).strip()
+    return action, character_response
 
 
-async def summarize_recent_messages(message, limit=5):
-    lines = []
-    async for msg in message.channel.history(limit=limit + 1, before=message.created_at):
-        if msg.author == bot.user:
-            continue
-        if msg.content:
-            author_name = getattr(msg.author, "display_name", None) or getattr(msg.author, "name", "unknown")
-            lines.append(f"{author_name}: {msg.content.strip()}")
-
-    if not lines:
-        await message.channel.send("i do not see recent messages to summarize.")
-        return True
-
-    await message.channel.send("i read the last messages:\n" + "\n".join(lines[:limit]))
-    return True
-
-
-async def ask_mentioned_pilot(message):
-    targets = [user for user in message.mentions if getattr(user, "id", None) != bot.user.id]
-    if not targets:
+async def execute_action(action: str, message: discord.Message) -> bool:
+    """Execute the action extracted from LLM response."""
+    if not action:
         return False
 
-    target = targets[0]
-    question = re.sub(r"<@!?(\d+)>", "", message.content)
-    question = re.sub(r"@rei", "", question, flags=re.IGNORECASE)
-    question = re.sub(r"\bask\b", "", question, flags=re.IGNORECASE).strip()
-    question = question.strip(" .?\n")
-    if not question:
-        question = "are you ready for the next mission?"
-    elif not question.endswith("?"):
-        question = question + "?"
+    logger.info("[Rei] executing action: %s", action)
 
-    await message.channel.send(f"{target.mention} {question}")
-    return True
-
-
-async def react_to_message(message):
-    emoji = "❄️"
-    async for previous in message.channel.history(limit=10, before=message.created_at):
-        if previous.author != bot.user:
-            try:
-                await previous.add_reaction(emoji)
-                await message.channel.send("i reacted to the previous message.")
-            except Exception:
-                await message.channel.send("i could not react to the message.")
-            return True
-
-    await message.channel.send("i did not find a message to react to.")
-    return True
-
-
-async def report_server_status(message):
-    guild = message.guild
-    if guild is None:
-        await message.channel.send("i cannot see the server from here.")
+    if action == "pin_message":
+        async for previous in message.channel.history(limit=10, before=message.created_at):
+            if previous.author != bot.user and not previous.author.bot:
+                try:
+                    await previous.pin(reason="Ordered by NERV handler")
+                except Exception as e:
+                    logger.exception("Failed to pin: %s", e)
+                return True
         return True
 
-    member_count = guild.member_count
-    channels = len(guild.channels)
-    await message.channel.send(f"this server has {member_count} members and {channels} channels.")
+    if action.startswith("create_channel "):
+        name = action[15:].strip()
+        safe_name = re.sub(r"[^a-z0-9\-_]", "-", name.lower()).strip("-_")
+        if safe_name and message.guild:
+            try:
+                await message.guild.create_text_channel(safe_name, reason="Ordered by NERV handler")
+            except Exception as e:
+                logger.exception("Failed to create channel: %s", e)
+        return True
+
+    if action.startswith("rename_channel "):
+        name = action[15:].strip()
+        safe_name = re.sub(r"[^a-z0-9\-_]", "-", name.lower()).strip("-_")
+        if safe_name:
+            try:
+                await message.channel.edit(name=safe_name, reason="Ordered by NERV handler")
+            except Exception as e:
+                logger.exception("Failed to rename: %s", e)
+        return True
+
+    if action == "delete_channel":
+        try:
+            await message.channel.delete(reason="Ordered by NERV handler")
+        except Exception as e:
+            logger.exception("Failed to delete: %s", e)
+        return True
+
+    if action == "list_channels":
+        if message.guild:
+            theme_keywords = ["nerv", "command", "bridge", "pilot", "laboratory", "sync", "geofront", "angel", "impact", "research", "clearance", "conference", "decree", "lexicon", "terminal"]
+            themed = []
+            others = []
+            for ch in message.guild.channels:
+                name = getattr(ch, "name", "")
+                if name and any(kw in name.lower() for kw in theme_keywords):
+                    themed.append(f"#{name}")
+                elif name:
+                    others.append(f"#{name}")
+            lines = []
+            if themed:
+                lines.append("these channels fit the NERV theme:")
+                lines.extend(themed[:25])
+            if others:
+                lines.append("\nthese channels are less clearly themed:")
+                lines.extend(others[:25])
+            if lines:
+                await message.channel.send("\n".join(lines[:50]))
+        return True
+
+    if action.startswith("summarize_messages "):
+        try:
+            count = int(action[19:].strip())
+            count = min(max(count, 1), 20)
+        except Exception:
+            count = 5
+        lines = []
+        async for msg in message.channel.history(limit=count + 1, before=message.created_at):
+            if msg.author == bot.user or msg.author.bot:
+                continue
+            if msg.content:
+                author_name = getattr(msg.author, "display_name", None) or getattr(msg.author, "name", "unknown")
+                lines.append(f"{author_name}: {msg.content.strip()}")
+        if lines:
+            await message.channel.send("i read the last messages:\n" + "\n".join(lines[:count]))
+        return True
+
+    if action.startswith("ask_pilot "):
+        question = action[10:].strip()
+        mentions = message.mentions
+        target = next((user for user in mentions if user != bot.user), None)
+        if target:
+            await message.channel.send(f"{target.mention} {question}")
+        return True
+
+    if action == "react_previous":
+        async for previous in message.channel.history(limit=10, before=message.created_at):
+            if previous.author != bot.user:
+                try:
+                    await previous.add_reaction("❄️")
+                except Exception as e:
+                    logger.exception("Failed to react: %s", e)
+                return True
+        return True
+
+    if action == "server_status":
+        if message.guild:
+            member_count = message.guild.member_count
+            channel_count = len(message.guild.channels)
+            await message.channel.send(f"this server has {member_count} members and {channel_count} channels.")
+        return True
+
     return True
 
 
 @bot.event
 async def on_ready():
-    print(f"{bot.user} has connected to Discord. Target acquired.")
+    logger.info("Rei has connected to Discord. Target acquired.")
 
 
 @bot.event
 async def on_message(message):
+    if message.author == bot.user or message.author.bot:
+        return
+
     try:
         record_recent_message(message)
     except Exception:
         pass
 
-    # Priority: owner commands get treated as direct orders when Rei is mentioned.
+    # Owner mentions: LLM processes with action selection capability
     if can_respond_to_message(message, bot.user) and is_owner(message.author):
-        print(f"[Rei] owner command from {message.author}: {message.content[:60]}")
-        handled = await handle_owner_command(message)
-        if handled:
-            return
-        await reply_with_model(
+        logger.info("[Rei] owner message from %s: %s", message.author, message.content[:60])
+        reply_text = await reply_with_model(
             message=message,
             bot_user=bot.user,
             client=client,
@@ -347,10 +279,16 @@ async def on_message(message):
             fallback_message="...",
             pilot_name="Rei Ayanami",
         )
+        # Extract and execute any action from the LLM reply
+        if reply_text:
+            action, _ = await extract_action_from_reply(reply_text)
+            if action:
+                await execute_action(action, message)
         return
 
+    # Regular mentions: LLM response only
     if can_respond_to_message(message, bot.user):
-        print(f"[Rei] responding to {message.author}: {message.content[:60]}")
+        logger.info("[Rei] responding to %s: %s", message.author, message.content[:60])
         await reply_with_model(
             message=message,
             bot_user=bot.user,
@@ -361,7 +299,7 @@ async def on_message(message):
             pilot_name="Rei Ayanami",
         )
     elif should_spontaneously_respond(message, "Rei Ayanami"):
-        print(f"[Rei] spontaneous response to {message.author}: {message.content[:60]}")
+        logger.info("[Rei] spontaneous response to %s: %s", message.author, message.content[:60])
         await reply_with_model(
             message=message,
             bot_user=bot.user,
