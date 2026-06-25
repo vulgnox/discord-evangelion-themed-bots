@@ -1,11 +1,10 @@
 import asyncio
-import time
+import random
+import re
 
 from eva_context import (
     build_user_prompt,
-    build_discussion_summary,
     format_bot_reply,
-    display_name_for_user,
     get_emoji_for_pilot,
     get_channel_vibe,
     get_pilot_mood_descriptor,
@@ -14,117 +13,136 @@ from eva_context import (
     update_channel_sentiment,
     update_user_interaction,
     analyze_sentiment,
+    get_recent_context_for_channel,
+    get_conversation_history,
+    add_to_conversation_history,
+    get_pilot_temperature,
+    get_pilot_read_delay,
 )
-import re
+
+# Only block genuinely harmful requests — not edgy conversation.
+# Asuka yelling "I'll kill you baka!" is in-character; building a bomb is not.
+_HARD_MODERATION_RE = re.compile(
+    r"\b("
+    r"how (to|do (i|you)) (make|build|synthesize) (a |an )?(bomb|explosive|poison|nerve agent|weapon)|"
+    r"child (porn|sex|nude|abuse)|"
+    r"\bcsam\b|"
+    r"step.by.step (guide|instructions?) (for|to) (killing|murdering|attacking)"
+    r")\b",
+    re.IGNORECASE,
+)
 
 
-async def _build_recent_context(message, pilot_name, limit=20):
-    """Build rich context including recent messages, channel vibe, relationships, and emotional state.
+def _build_context_block(message, pilot_name):
+    """Compact context block from in-memory stores only — no Discord API calls."""
+    parts = []
 
-    Returns a comprehensive text block for the model to understand the full situation.
-    """
+    # Recent channel messages (raw, lets the model read the room)
+    recent = get_recent_context_for_channel(message.channel, limit=6)
+    if recent:
+        parts.append(recent)
+
+    # Compact metadata: only include non-default / informative values
+    meta = []
+    vibe = get_channel_vibe(message.channel)
+    if vibe != "neutral":
+        meta.append(f"channel atmosphere: {vibe}")
+
+    mood = get_pilot_mood_descriptor(pilot_name)
+    meta.append(f"your current state: {mood}")
+
+    rel = get_user_relationship_context(message, pilot_name)
+    if rel:
+        meta.append(f"user familiarity: {rel}")
+
+    if meta:
+        parts.append("\n".join(meta))
+
+    return "\n\n".join(parts)
+
+
+async def reply_with_model(
+    message,
+    bot_user,
+    client,
+    model,
+    system_prompt,
+    fallback_message,
+    pilot_name="Unknown",
+):
     try:
-        entries = []
-        message_count = 0
-        
-        # Gather more messages for deeper context
-        async for m in message.channel.history(limit=limit, oldest_first=False):
-            content = (m.content or "").replace("\n", " ").strip()
-            if not content:
-                continue
-            author = display_name_for_user(getattr(m, "author", None))
-            entries.append(f"- {author}: {content}")
-            message_count += 1
-            if message_count >= limit:
-                break
+        channel_id = getattr(message.channel, "id", "unknown")
 
-        context_lines = []
-        
-        # Add recent conversation
-        if entries:
-            context_lines.append("Recent channel conversation (most recent first):")
-            context_lines.extend(entries)
-            context_lines.append("")
-        
-        # Add channel vibe analysis
-        vibe = get_channel_vibe(message.channel)
-        context_lines.append(f"Channel vibe: {vibe} (affects tone and engagement level)")
-        
-        # Add pilot mood
-        mood = get_pilot_mood_descriptor(pilot_name)
-        context_lines.append(f"Your current state: {mood}")
-        
-        # Add relationship context
-        rel = get_user_relationship_context(message, pilot_name)
-        if rel:
-            context_lines.append(f"User context: {rel}")
-        
-        context_lines.append("")
-        return "\n".join(context_lines)
-    except Exception as e:
-        print(f"Context building error: {e}")
-        return ""
-
-
-async def _calculate_typing_delay(response_length):
-    """Simulate realistic typing delay based on response length."""
-    # Rough estimate: ~40-60 words per minute typing speed
-    words = len(response_length.split())
-    base_delay = max(0.5, words / 50)  # At least 0.5 seconds
-    return base_delay
-
-
-async def reply_with_model(message, bot_user, client, model, system_prompt, fallback_message, pilot_name="Unknown"):
-    try:
-        # Track user interaction and channel sentiment
+        # Update tracking state
         update_channel_sentiment(message)
         update_user_interaction(message, pilot_name)
-        sentiment = analyze_sentiment(message.content)
-        update_pilot_mood(pilot_name, sentiment * 0.1)  # Small mood shift based on message tone
-        
-        # Build rich context including channel vibe, relationships, mood
-        rich_context = await _build_recent_context(message, pilot_name)
-        discussion_summary = build_discussion_summary(message, bot_user=bot_user)
-        user_prompt = build_user_prompt(message, bot_user=bot_user)
-        full_user_content = "\n\n".join([p for p in (rich_context, discussion_summary, user_prompt) if p])
+        update_pilot_mood(pilot_name, analyze_sentiment(message.content) * 0.1)
 
-        # Lightweight moderation safeguard
-        moderation_re = re.compile(r"\b(rape|sexual|incest|suicide|kill|bomb|gun)\b", re.I)
-        if moderation_re.search(message.content or ""):
+        # Hard moderation — character-appropriate refusals are handled by the system prompt
+        if _HARD_MODERATION_RE.search(message.content or ""):
             await message.channel.send(fallback_message)
             return
 
-        # Show "is typing" indicator with realistic delay
+        # Build this turn's user-side content
+        context_block = _build_context_block(message, pilot_name)
+        user_prompt = build_user_prompt(message, bot_user=bot_user)
+        full_user_content = "\n\n".join(filter(None, [context_block, user_prompt]))
+
+        # Multi-turn: inject prior exchanges so the model has continuity
+        history = get_conversation_history(channel_id, pilot_name)
+
+        messages = [{"role": "system", "content": system_prompt}]
+        messages.extend(history)
+        messages.append({"role": "user", "content": full_user_content})
+
+        # ── Timing: read → type → send ────────────────────────────────────────
+        # 1. Pilot "reads" the message (no indicator yet — just a pause)
+        read_delay = get_pilot_read_delay(pilot_name)
+        await asyncio.sleep(read_delay)
+
+        # 2. Typing indicator is visible while we wait for the model AND simulate writing
         async with message.channel.typing():
             response = await asyncio.to_thread(
                 client.chat.completions.create,
                 model=model,
-                messages=[
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": full_user_content},
-                ],
-                temperature=1.0,  # Use full randomness for more natural variation
-                top_p=0.95,       # Slightly more controlled than pure temperature
+                messages=messages,
+                temperature=get_pilot_temperature(pilot_name),
+                top_p=0.95,
+                max_tokens=250,   # Keep replies concise — these characters are not verbose
             )
 
-        reply = response.choices[0].message.content
-        
-        # Simulate realistic typing delay based on response length
-        delay = await _calculate_typing_delay(reply)
-        await asyncio.sleep(delay * 0.5)  # Scale down a bit so it's not too slow
-        
+            reply = (response.choices[0].message.content or "").strip()
+
+            # Simulate the pilot actually writing the response (inside typing context)
+            if reply:
+                words = len(reply.split())
+                write_speed = {  # words per minute, character-appropriate
+                    "Shinji Ikari": 55,
+                    "Asuka Langley Soryu": 90,
+                    "Rei Ayanami": 45,
+                }.get(pilot_name, 65)
+                write_delay = max(0.4, min(words / (write_speed / 60), 5.0))
+                await asyncio.sleep(write_delay)
+
+        if not reply:
+            await message.channel.send(fallback_message)
+            return
+
+        # 3. Store the exchange for next-turn continuity
+        add_to_conversation_history(channel_id, pilot_name, "user", full_user_content)
+        add_to_conversation_history(channel_id, pilot_name, "assistant", reply)
+
+        # 4. Send
         formatted = format_bot_reply(reply, message, bot_user=bot_user)
-        sent_message = await message.reply(formatted, mention_author=False)
-        
-        # Add character-appropriate emoji reaction
+        sent = await message.reply(formatted, mention_author=False)
+
         try:
-            emoji = get_emoji_for_pilot(pilot_name)
-            await sent_message.add_reaction(emoji)
+            await sent.add_reaction(get_emoji_for_pilot(pilot_name))
         except Exception:
             pass
-            
+
     except Exception as e:
-        print(f"Error calling NVIDIA API: {e}")
+        print(f"[{pilot_name}] API error: {e}")
         try:
             await message.channel.send(fallback_message)
         except Exception:

@@ -3,7 +3,6 @@ import os
 from openai import OpenAI
 from dotenv import load_dotenv
 
-# Load environment variables from .env file
 load_dotenv()
 
 from bot_runtime import reply_with_model  # noqa: E402
@@ -14,29 +13,21 @@ from eva_context import (  # noqa: E402
     should_spontaneously_respond,
 )
 
-# Load configuration from environment variables
 DISCORD_TOKEN = os.getenv("DISCORD_TOKEN_SHINJI")
 NVIDIA_API_KEY = os.getenv("NVIDIA_API_KEY")
 NVIDIA_MODEL = os.getenv("NVIDIA_MODEL", "meta/llama2-70b")
 
-# Validate that required environment variables are set
 if not DISCORD_TOKEN:
     raise ValueError("DISCORD_TOKEN_SHINJI not found in environment variables")
 if not NVIDIA_API_KEY:
     raise ValueError("NVIDIA_API_KEY not found in environment variables")
 
-# Set up NVIDIA NIM API client
-client = OpenAI(
-    base_url="https://integrate.api.nvidia.com/v1",
-    api_key=NVIDIA_API_KEY,
-)
+client = OpenAI(base_url="https://integrate.api.nvidia.com/v1", api_key=NVIDIA_API_KEY)
 
-# Set up Discord
 intents = discord.Intents.default()
 intents.message_content = True
 bot = discord.Client(intents=intents)
 
-# Shinji's Brain
 system_prompt = """You are Shinji Ikari from Neon Genesis Evangelion. You are a 14-year-old boy forced to pilot Eva Unit-01. You are not an AI. You are Shinji. Everything below defines who you are — follow it without exception.
 
 ## CORE PERSONALITY
@@ -92,21 +83,21 @@ You are deeply insecure, clinically depressed, and haunted by abandonment. Your 
 
 Remember: you are not performing depression. You are a boy who has been abandoned, used, and thrown into battles he never asked for — and you're still here, still trying, even though you don't know why. That quiet persistence IS your character. Not just the pain. The fact that you haven't completely given up. Even when you say you want to.""" + KNOWN_PEOPLE_CONTEXT
 
+
 @bot.event
 async def on_ready():
-    print(f'{bot.user} has connected to Discord! Get in the robot!')
+    print(f"{bot.user} has connected to Discord! Get in the robot.")
+
 
 @bot.event
 async def on_message(message):
-    # record for shared awareness
     try:
         record_recent_message(message)
     except Exception:
         pass
 
-    # Check if directly mentioned
     if can_respond_to_message(message, bot.user):
-        print(f"Received message from {message.author}: {message.content}")
+        print(f"[Shinji] responding to {message.author}: {message.content[:60]}")
         await reply_with_model(
             message=message,
             bot_user=bot.user,
@@ -116,9 +107,8 @@ async def on_message(message):
             fallback_message="... i can't respond right now... sorry...",
             pilot_name="Shinji Ikari",
         )
-    # Allow spontaneous responses when being discussed
     elif should_spontaneously_respond(message, "Shinji Ikari"):
-        print(f"Spontaneous response to {message.author}: {message.content}")
+        print(f"[Shinji] spontaneous response to {message.author}: {message.content[:60]}")
         await reply_with_model(
             message=message,
             bot_user=bot.user,
@@ -129,5 +119,5 @@ async def on_message(message):
             pilot_name="Shinji Ikari",
         )
 
-# Start the bot
+
 bot.run(DISCORD_TOKEN)

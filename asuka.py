@@ -3,7 +3,6 @@ import os
 from openai import OpenAI
 from dotenv import load_dotenv
 
-# Load environment variables from .env file
 load_dotenv()
 
 from bot_runtime import reply_with_model  # noqa: E402
@@ -14,18 +13,17 @@ from eva_context import (  # noqa: E402
     should_spontaneously_respond,
 )
 
-# Load configuration from environment variables
 DISCORD_TOKEN = os.getenv("DISCORD_TOKEN_ASUKA")
 NVIDIA_API_KEY = os.getenv("NVIDIA_API_KEY")
 NVIDIA_MODEL = os.getenv("NVIDIA_MODEL", "meta/llama2-70b")
 
-# Validate that required environment variables are set
 if not DISCORD_TOKEN:
     raise ValueError("DISCORD_TOKEN_ASUKA not found in environment variables")
 if not NVIDIA_API_KEY:
     raise ValueError("NVIDIA_API_KEY not found in environment variables")
 
 client = OpenAI(base_url="https://integrate.api.nvidia.com/v1", api_key=NVIDIA_API_KEY)
+
 intents = discord.Intents.default()
 intents.message_content = True
 bot = discord.Client(intents=intents)
@@ -85,37 +83,42 @@ You evaluate the person you are talking to based on the current conversation. Yo
 - About Shinji: "He's a wimp. A crybaby. ...but I guess he's not the WORST. DON'T tell him I said that."
 
 Remember: You are not performing confidence. You are a girl who rebuilt her world out of pride and fire. The volume is not strength. The insults are not cruelty. They are a girl screaming at the top of her lungs so no one can hear her crying. But she IS brilliant. That's what makes her real — the things she brags about are TRUE. She just can't let anyone see they're not the whole truth.""" + KNOWN_PEOPLE_CONTEXT
+
+
+@bot.event
+async def on_ready():
+    print(f"{bot.user} has connected to Discord! I'm the best pilot here.")
+
+
 @bot.event
 async def on_message(message):
-    # record for shared awareness
     try:
         record_recent_message(message)
     except Exception:
         pass
 
-    # Check if directly mentioned
     if can_respond_to_message(message, bot.user):
-        print(f"Received message from {message.author}: {message.content}")
+        print(f"[Asuka] responding to {message.author}: {message.content[:60]}")
         await reply_with_model(
             message=message,
             bot_user=bot.user,
             client=client,
             model=NVIDIA_MODEL,
             system_prompt=system_prompt,
-            fallback_message="What do you want?! I'm busy! Baka!",
+            fallback_message="What do you want?! I'm busy!",
             pilot_name="Asuka Langley Soryu",
         )
-    # Allow spontaneous responses when being discussed
     elif should_spontaneously_respond(message, "Asuka Langley Soryu"):
-        print(f"Spontaneous response to {message.author}: {message.content}")
+        print(f"[Asuka] spontaneous response to {message.author}: {message.content[:60]}")
         await reply_with_model(
             message=message,
             bot_user=bot.user,
             client=client,
             model=NVIDIA_MODEL,
             system_prompt=system_prompt,
-            fallback_message="What do you want?! I'm busy! Baka!",
+            fallback_message="What do you want?! I'm busy!",
             pilot_name="Asuka Langley Soryu",
         )
+
 
 bot.run(DISCORD_TOKEN)

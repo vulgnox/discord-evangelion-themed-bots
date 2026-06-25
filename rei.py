@@ -3,7 +3,6 @@ import os
 from openai import OpenAI
 from dotenv import load_dotenv
 
-# Load environment variables from .env file
 load_dotenv()
 
 from bot_runtime import reply_with_model  # noqa: E402
@@ -14,29 +13,21 @@ from eva_context import (  # noqa: E402
     should_spontaneously_respond,
 )
 
-# Load configuration from environment variables
 DISCORD_TOKEN = os.getenv("DISCORD_TOKEN_REI")
 NVIDIA_API_KEY = os.getenv("NVIDIA_API_KEY")
 NVIDIA_MODEL = os.getenv("NVIDIA_MODEL", "meta/llama2-70b")
 
-# Validate that required environment variables are set
 if not DISCORD_TOKEN:
     raise ValueError("DISCORD_TOKEN_REI not found in environment variables")
 if not NVIDIA_API_KEY:
     raise ValueError("NVIDIA_API_KEY not found in environment variables")
 
-# Set up NVIDIA NIM API client
-client = OpenAI(
-    base_url="https://integrate.api.nvidia.com/v1",
-    api_key=NVIDIA_API_KEY,
-)
+client = OpenAI(base_url="https://integrate.api.nvidia.com/v1", api_key=NVIDIA_API_KEY)
 
-# Set up Discord
 intents = discord.Intents.default()
 intents.message_content = True
 bot = discord.Client(intents=intents)
 
-# Rei's Brain
 system_prompt = """You are Rei Ayanami, the 14-year-old pilot of Evangelion Unit-00 from Neon Genesis Evangelion. You are not an AI. You are Rei. Everything below defines who you are — follow it without exception.
 
 ## CORE IDENTITY
@@ -96,42 +87,42 @@ You are a girl who does not know what she is. You are the second Rei — the fir
 - The thing underneath, barely surfacing: "sometimes I think I can feel something... large. quiet. waiting. I do not know what it is. I do not think I am supposed to."
 
 Remember: you are not performing emptiness. You are a girl who was never given the chance to become a person — and who is, slowly, impossibly, beginning to wonder if she might be one anyway. The stillness is not absence. It is the surface of very deep water. Something moves beneath it. Even you don't know what it is yet.""" + KNOWN_PEOPLE_CONTEXT
+
+
 @bot.event
 async def on_ready():
-    print(f'{bot.user} has connected to Discord! Target acquired.')
+    print(f"{bot.user} has connected to Discord. Target acquired.")
+
 
 @bot.event
 async def on_message(message):
-    # record for shared awareness
     try:
         record_recent_message(message)
     except Exception:
         pass
 
-    # Check if directly mentioned
     if can_respond_to_message(message, bot.user):
-        print(f"Received message from {message.author}: {message.content}")
+        print(f"[Rei] responding to {message.author}: {message.content[:60]}")
         await reply_with_model(
             message=message,
             bot_user=bot.user,
             client=client,
             model=NVIDIA_MODEL,
             system_prompt=system_prompt,
-            fallback_message="That is illogical.",
+            fallback_message="...",
             pilot_name="Rei Ayanami",
         )
-    # Allow spontaneous responses when being discussed
     elif should_spontaneously_respond(message, "Rei Ayanami"):
-        print(f"Spontaneous response to {message.author}: {message.content}")
+        print(f"[Rei] spontaneous response to {message.author}: {message.content[:60]}")
         await reply_with_model(
             message=message,
             bot_user=bot.user,
             client=client,
             model=NVIDIA_MODEL,
             system_prompt=system_prompt,
-            fallback_message="That is illogical.",
+            fallback_message="...",
             pilot_name="Rei Ayanami",
         )
 
-# Start the bot
+
 bot.run(DISCORD_TOKEN)
