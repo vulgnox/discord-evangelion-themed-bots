@@ -1,6 +1,8 @@
 import os
 import re
 import asyncio
+import time
+import random
 from collections import deque, defaultdict
 
 
@@ -87,12 +89,14 @@ def get_recent_context_for_channel(channel, limit=8):
 def should_spontaneously_respond(message, pilot_name):
     """Check if a pilot should spontaneously join the conversation.
     
-    Returns True if:
-    - The message mentions the pilot by name or alias
-    - The message is discussing the pilot (e.g., talking about their unit, their feelings, etc.)
-    - And the bot is not on cooldown for this channel
+    Factors considered:
+    - Pilot is mentioned or discussed
+    - Channel cooldown has passed
+    - Pilot mood influences engagement likelihood
+    - Channel vibe affects participation
+    - Sometimes pilots selectively observe without responding
     """
-    import time
+    import random
     
     if message.author == getattr(message, "bot_user", None):  # Don't respond to self
         return False
@@ -120,17 +124,40 @@ def should_spontaneously_respond(message, pilot_name):
     
     # Also add character-specific keywords
     if "shinji" in pilot_name.lower():
-        keywords.extend(["misato", "gendo", "father", "deserved", "run away", "eva"])
+        keywords.extend(["misato", "gendo", "father", "deserved", "run away", "eva", "abandon"])
     elif "asuka" in pilot_name.lower():
-        keywords.extend(["baka", "dummkopf", "second child", "competitive", "pity"])
+        keywords.extend(["baka", "dummkopf", "second child", "competitive", "pity", "skilled"])
     elif "rei" in pilot_name.lower():
-        keywords.extend(["first child", "quiet", "emotionless", "unit-00"])
+        keywords.extend(["first child", "quiet", "emotionless", "unit-00", "strange"])
     
-    if any(kw in content for kw in keywords):
-        _spontaneous_cooldown[cooldown_key] = __import__("time").time()
-        return True
+    if not any(kw in content for kw in keywords):
+        return False
     
-    return False
+    # This pilot is being discussed! But should they actually jump in?
+    # Consider mood and channel vibe
+    
+    pilot_mood = _pilot_mood.get(pilot_name, 0.5)
+    channel_vibe = get_channel_vibe(message.channel if hasattr(message, "channel") else None)
+    
+    # Mood affects engagement: withdrawn pilots (low mood) are less likely to respond
+    mood_factor = pilot_mood
+    
+    # Channel vibe affects engagement
+    vibe_factor = {
+        "positive": 0.8,   # Pilots more likely to engage in positive atmosphere
+        "negative": 0.6,   # Moderate engagement in negative vibes
+        "neutral": 0.7,    # Baseline engagement
+    }.get(channel_vibe, 0.7)
+    
+    # Sometimes pilots just observe without responding (to feel more human)
+    observation_chance = 1.0 - (mood_factor * vibe_factor)  # Higher = more likely to NOT respond
+    
+    if random.random() < observation_chance * 0.3:  # 30% of the time they observe silently
+        return False
+    
+    # Set cooldown
+    _spontaneous_cooldown[cooldown_key] = time.time()
+    return True
 
 
 def get_emoji_for_pilot(pilot_name):
@@ -142,6 +169,131 @@ def get_emoji_for_pilot(pilot_name):
     elif "rei" in pilot_name.lower():
         return "❄️"  # cold/enigmatic
     return "👍"
+
+
+# ============================================================================
+# ENHANCED HUMAN-LIKE BEHAVIOR: Sentiment, Mood, Relationships, Channel Culture
+# ============================================================================
+
+# Track emotional state per pilot (affects response likelihood and tone)
+_pilot_mood = {
+    "Shinji Ikari": 0.5,      # neutral (scale 0-1, 0=withdrawn, 1=engaged)
+    "Asuka Langley Soryu": 0.6,
+    "Rei Ayanami": 0.4,
+}
+
+# Track user relationships (how often do they interact with each pilot)
+_user_interaction_count = defaultdict(lambda: defaultdict(int))
+
+# Track channel mood/vibe (affects how willing bots are to engage)
+_channel_sentiment_history = defaultdict(lambda: deque(maxlen=30))
+
+
+def analyze_sentiment(text):
+    """Simple sentiment analysis. Returns -1 (negative), 0 (neutral), or 1 (positive)."""
+    negative_words = {"sad", "bad", "hate", "angry", "upset", "wrong", "pain", "hurt", "die", "awful", "terrible", "horrible"}
+    positive_words = {"good", "great", "love", "happy", "nice", "fun", "awesome", "excellent", "amazing", "beautiful"}
+    
+    lower_text = (text or "").lower()
+    
+    neg_count = sum(1 for word in negative_words if word in lower_text)
+    pos_count = sum(1 for word in positive_words if word in lower_text)
+    
+    if pos_count > neg_count:
+        return 1
+    elif neg_count > pos_count:
+        return -1
+    return 0
+
+
+def update_channel_sentiment(message):
+    """Track channel sentiment over time."""
+    try:
+        channel_id = getattr(message.channel, "id", None) or str(getattr(message.channel, "name", "unknown"))
+        sentiment = analyze_sentiment(message.content)
+        _channel_sentiment_history[channel_id].appendleft(sentiment)
+    except Exception:
+        pass
+
+
+def get_channel_vibe(channel):
+    """Returns 'positive', 'negative', or 'neutral' based on recent messages."""
+    try:
+        channel_id = getattr(channel, "id", None) or str(getattr(channel, "name", "unknown"))
+        history = list(_channel_sentiment_history.get(channel_id, []))
+        if not history:
+            return "neutral"
+        avg_sentiment = sum(history) / len(history)
+        if avg_sentiment > 0.2:
+            return "positive"
+        elif avg_sentiment < -0.2:
+            return "negative"
+        return "neutral"
+    except Exception:
+        return "neutral"
+
+
+def update_user_interaction(message, pilot_name):
+    """Track how often a user interacts with a specific pilot."""
+    try:
+        user_id = str(getattr(message.author, "id", "unknown"))
+        _user_interaction_count[user_id][pilot_name] += 1
+    except Exception:
+        pass
+
+
+def get_user_relationship_context(message, pilot_name):
+    """Return info about how familiar this user is with the pilot."""
+    try:
+        user_id = str(getattr(message.author, "id", "unknown"))
+        interactions = _user_interaction_count[user_id][pilot_name]
+        if interactions > 10:
+            return f"This person has talked to {pilot_name.split()[0]} many times. They know each other."
+        elif interactions > 3:
+            return f"This person has talked to {pilot_name.split()[0]} a few times. They're getting familiar."
+        elif interactions > 0:
+            return f"This person has talked to {pilot_name.split()[0]} before, but not often."
+        return f"This person is new to talking with {pilot_name.split()[0]}."
+    except Exception:
+        return ""
+
+
+def update_pilot_mood(pilot_name, sentiment_shift):
+    """Shift a pilot's mood based on recent interactions."""
+    try:
+        current = _pilot_mood.get(pilot_name, 0.5)
+        # Mood drifts slowly, bounded between 0 and 1
+        new_mood = max(0.0, min(1.0, current + sentiment_shift * 0.05))
+        _pilot_mood[pilot_name] = new_mood
+    except Exception:
+        pass
+
+
+def get_pilot_mood_descriptor(pilot_name):
+    """Return a descriptor of the pilot's current emotional state."""
+    mood = _pilot_mood.get(pilot_name, 0.5)
+    if "shinji" in pilot_name.lower():
+        if mood > 0.7:
+            return "feeling slightly less depressed"
+        elif mood > 0.5:
+            return "in their usual withdrawn state"
+        else:
+            return "especially withdrawn today"
+    elif "asuka" in pilot_name.lower():
+        if mood > 0.7:
+            return "in a sharp, confrontational mood"
+        elif mood > 0.5:
+            return "their usual competitive self"
+        else:
+            return "unusually quiet"
+    elif "rei" in pilot_name.lower():
+        if mood > 0.7:
+            return "unusually expressive"
+        elif mood > 0.5:
+            return "their typical distant self"
+        else:
+            return "even more withdrawn than usual"
+    return "neutral"
 
 
 def can_respond_to_message(message, bot_user):
