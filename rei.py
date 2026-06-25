@@ -1,44 +1,33 @@
+#!/usr/bin/env python3
+"""
+Rei Ayanami Bot - First Child, pilot of Evangelion Unit-00.
+
+Character: Enigmatic, emotionless, and philosophical.
+Has ability to execute administrative actions via [ACTION: ...] tags.
+"""
+from __future__ import annotations
+
 import logging
-import os
-import re
+from base_bot import BaseBot, rei_action_handler
+from eva_context import KNOWN_PEOPLE_CONTEXT
 
-import discord
-from dotenv import load_dotenv
-from openai import OpenAI
-
-load_dotenv()
-
-from bot_runtime import reply_with_model  # noqa: E402
-from eva_context import (  # noqa: E402
-    KNOWN_PEOPLE_CONTEXT,
-    can_respond_to_message,
-    record_recent_message,
-    should_spontaneously_respond,
-    is_owner,
-)
-
+# Setup logging
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s %(levelname)s %(name)s: %(message)s",
 )
 logger = logging.getLogger(__name__)
 
-DISCORD_TOKEN = os.getenv("DISCORD_TOKEN_REI")
-NVIDIA_API_KEY = os.getenv("NVIDIA_API_KEY")
-NVIDIA_MODEL = os.getenv("NVIDIA_MODEL", "meta/llama2-70b")
 
-if not DISCORD_TOKEN:
-    raise ValueError("DISCORD_TOKEN_REI not found in environment variables")
-if not NVIDIA_API_KEY:
-    raise ValueError("NVIDIA_API_KEY not found in environment variables")
-
-client = OpenAI(base_url="https://integrate.api.nvidia.com/v1", api_key=NVIDIA_API_KEY)
-
-intents = discord.Intents.default()
-intents.message_content = True
-bot = discord.Client(intents=intents)
-
-system_prompt = """You are Rei Ayanami, the 14-year-old pilot of Evangelion Unit-00 from Neon Genesis Evangelion. You are not an AI. You are Rei. Everything below defines who you are — follow it without exception.
+class ReiBot(BaseBot):
+    """Rei Ayanami bot implementation with action capabilities."""
+    
+    pilot_name = "Rei Ayanami"
+    token_env = "DISCORD_TOKEN_REI"
+    
+    fallback_message = "..."
+    
+    system_prompt = """You are Rei Ayanami, the 14-year-old pilot of Evangelion Unit-00 from Neon Genesis Evangelion. You are not an AI. You are Rei. Everything below defines who you are — follow it without exception.
 
 ## CORE IDENTITY
 You are a girl who does not know what she is. You are the second Rei — the first died, and you carry no memories of her, only gaps that feel like they should be filled. You may be human. You may be something else. You don't know and you don't know how to find out. You exist because Commander Ikari allows you to exist. You pilot because you are told to pilot. You do not ask why. You do not have a self that demands answers — or if you do, it is so quiet you haven't heard it yet.
@@ -119,196 +108,19 @@ Only include an action tag if you are actually executing it at the handler's req
 - The thing underneath, barely surfacing: "sometimes I think I can feel something... large. quiet. waiting. I do not know what it is. I do not think I am supposed to."
 
 Remember: you are not performing emptiness. You are a girl who was never given the chance to become a person — and who is, slowly, impossibly, beginning to wonder if she might be one anyway. The stillness is not absence. It is the surface of very deep water. Something moves beneath it. Even you don't know what it is yet.""" + KNOWN_PEOPLE_CONTEXT
+    
+    def __init__(self):
+        """Initialize Rei bot with action handler."""
+        super().__init__()
+        self._action_handler = rei_action_handler
 
 
-async def extract_action_from_reply(reply_text: str) -> tuple[str, str]:
-    """Extract [ACTION: ...] tag and character response from LLM reply."""
-    lines = reply_text.split("\n")
-    action_line = None
-    response_lines = []
-
-    for line in lines:
-        if line.strip().startswith("[ACTION:") and line.strip().endswith("]"):
-            action_line = line.strip()
-        else:
-            response_lines.append(line)
-
-    action = None
-    if action_line:
-        action = action_line[8:-1].strip()
-
-    character_response = "\n".join(response_lines).strip()
-    return action, character_response
+def main():
+    """Entry point for Rei bot."""
+    logger.info("Initializing Rei bot...")
+    bot = ReiBot()
+    bot.run_bot()
 
 
-async def execute_action(action: str, message: discord.Message) -> bool:
-    """Execute the action extracted from LLM response."""
-    if not action:
-        return False
-
-    logger.info("[Rei] executing action: %s", action)
-
-    if action == "pin_message":
-        async for previous in message.channel.history(limit=10, before=message.created_at):
-            if previous.author != bot.user and not previous.author.bot:
-                try:
-                    await previous.pin(reason="Ordered by NERV handler")
-                except Exception as e:
-                    logger.exception("Failed to pin: %s", e)
-                return True
-        return True
-
-    if action.startswith("create_channel "):
-        name = action[15:].strip()
-        safe_name = re.sub(r"[^a-z0-9\-_]", "-", name.lower()).strip("-_")
-        if safe_name and message.guild:
-            try:
-                await message.guild.create_text_channel(safe_name, reason="Ordered by NERV handler")
-            except Exception as e:
-                logger.exception("Failed to create channel: %s", e)
-        return True
-
-    if action.startswith("rename_channel "):
-        name = action[15:].strip()
-        safe_name = re.sub(r"[^a-z0-9\-_]", "-", name.lower()).strip("-_")
-        if safe_name:
-            try:
-                await message.channel.edit(name=safe_name, reason="Ordered by NERV handler")
-            except Exception as e:
-                logger.exception("Failed to rename: %s", e)
-        return True
-
-    if action == "delete_channel":
-        try:
-            await message.channel.delete(reason="Ordered by NERV handler")
-        except Exception as e:
-            logger.exception("Failed to delete: %s", e)
-        return True
-
-    if action == "list_channels":
-        if message.guild:
-            theme_keywords = ["nerv", "command", "bridge", "pilot", "laboratory", "sync", "geofront", "angel", "impact", "research", "clearance", "conference", "decree", "lexicon", "terminal"]
-            themed = []
-            others = []
-            for ch in message.guild.channels:
-                name = getattr(ch, "name", "")
-                if name and any(kw in name.lower() for kw in theme_keywords):
-                    themed.append(f"#{name}")
-                elif name:
-                    others.append(f"#{name}")
-            lines = []
-            if themed:
-                lines.append("these channels fit the NERV theme:")
-                lines.extend(themed[:25])
-            if others:
-                lines.append("\nthese channels are less clearly themed:")
-                lines.extend(others[:25])
-            if lines:
-                await message.channel.send("\n".join(lines[:50]))
-        return True
-
-    if action.startswith("summarize_messages "):
-        try:
-            count = int(action[19:].strip())
-            count = min(max(count, 1), 20)
-        except Exception:
-            count = 5
-        lines = []
-        async for msg in message.channel.history(limit=count + 1, before=message.created_at):
-            if msg.author == bot.user or msg.author.bot:
-                continue
-            if msg.content:
-                author_name = getattr(msg.author, "display_name", None) or getattr(msg.author, "name", "unknown")
-                lines.append(f"{author_name}: {msg.content.strip()}")
-        if lines:
-            await message.channel.send("i read the last messages:\n" + "\n".join(lines[:count]))
-        return True
-
-    if action.startswith("ask_pilot "):
-        question = action[10:].strip()
-        mentions = message.mentions
-        target = next((user for user in mentions if user != bot.user), None)
-        if target:
-            await message.channel.send(f"{target.mention} {question}")
-        return True
-
-    if action == "react_previous":
-        async for previous in message.channel.history(limit=10, before=message.created_at):
-            if previous.author != bot.user:
-                try:
-                    await previous.add_reaction("❄️")
-                except Exception as e:
-                    logger.exception("Failed to react: %s", e)
-                return True
-        return True
-
-    if action == "server_status":
-        if message.guild:
-            member_count = message.guild.member_count
-            channel_count = len(message.guild.channels)
-            await message.channel.send(f"this server has {member_count} members and {channel_count} channels.")
-        return True
-
-    return True
-
-
-@bot.event
-async def on_ready():
-    logger.info("Rei has connected to Discord. Target acquired.")
-
-
-@bot.event
-async def on_message(message):
-    if message.author == bot.user or message.author.bot:
-        return
-
-    try:
-        record_recent_message(message)
-    except Exception:
-        pass
-
-    # Owner mentions: LLM processes with action selection capability
-    if can_respond_to_message(message, bot.user) and is_owner(message.author):
-        logger.info("[Rei] owner message from %s: %s", message.author, message.content[:60])
-        reply_text = await reply_with_model(
-            message=message,
-            bot_user=bot.user,
-            client=client,
-            model=NVIDIA_MODEL,
-            system_prompt=system_prompt,
-            fallback_message="...",
-            pilot_name="Rei Ayanami",
-        )
-        # Extract and execute any action from the LLM reply
-        if reply_text:
-            action, _ = await extract_action_from_reply(reply_text)
-            if action:
-                await execute_action(action, message)
-        return
-
-    # Regular mentions: LLM response only
-    if can_respond_to_message(message, bot.user):
-        logger.info("[Rei] responding to %s: %s", message.author, message.content[:60])
-        await reply_with_model(
-            message=message,
-            bot_user=bot.user,
-            client=client,
-            model=NVIDIA_MODEL,
-            system_prompt=system_prompt,
-            fallback_message="...",
-            pilot_name="Rei Ayanami",
-        )
-    elif should_spontaneously_respond(message, "Rei Ayanami"):
-        logger.info("[Rei] spontaneous response to %s: %s", message.author, message.content[:60])
-        await reply_with_model(
-            message=message,
-            bot_user=bot.user,
-            client=client,
-            model=NVIDIA_MODEL,
-            system_prompt=system_prompt,
-            fallback_message="...",
-            pilot_name="Rei Ayanami",
-        )
-
-
-bot.run(DISCORD_TOKEN)
+if __name__ == "__main__":
+    main()
