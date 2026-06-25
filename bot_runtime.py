@@ -53,20 +53,8 @@ async def reply_with_model(message, bot_user, client, model, system_prompt, fall
             )
 
         reply = response.choices[0].message.content
-
-        # Try to create a thread and send the reply there for clearer conversation flow.
-        thread = None
-        try:
-            thread = await message.create_thread(name=f"Thread: {message.author.display_name}", auto_archive_duration=60)
-        except Exception:
-            # some channels or permissions disallow creating threads; ignore and fallback
-            thread = None
-
         formatted = format_bot_reply(reply, message, bot_user=bot_user)
-        if thread:
-            await thread.send(formatted)
-        else:
-            await message.reply(formatted, mention_author=False)
+        await message.reply(formatted, mention_author=False)
     except Exception as e:
         print(f"Error calling NVIDIA API: {e}")
         try:
