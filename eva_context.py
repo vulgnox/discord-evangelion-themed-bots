@@ -60,6 +60,10 @@ KNOWN_PEOPLE_CONTEXT = f"""
 RECENT_CONTEXT_LIMIT = 20
 _recent_channel_context = defaultdict(lambda: deque(maxlen=RECENT_CONTEXT_LIMIT))
 
+# Track spontaneous response cooldowns per (channel_id, pilot_name) to avoid spam
+_spontaneous_cooldown = {}
+SPONTANEOUS_COOLDOWN_SECONDS = 60
+
 
 def record_recent_message(message):
     try:
@@ -78,6 +82,66 @@ def get_recent_context_for_channel(channel, limit=8):
         return ""
     lines = [f"- {e['author']}: {e['content']}" for e in entries]
     return "Recent channel messages (most recent first):\n" + "\n".join(lines)
+
+
+def should_spontaneously_respond(message, pilot_name):
+    """Check if a pilot should spontaneously join the conversation.
+    
+    Returns True if:
+    - The message mentions the pilot by name or alias
+    - The message is discussing the pilot (e.g., talking about their unit, their feelings, etc.)
+    - And the bot is not on cooldown for this channel
+    """
+    import time
+    
+    if message.author == getattr(message, "bot_user", None):  # Don't respond to self
+        return False
+    
+    channel_id = getattr(message.channel, "id", None) or str(getattr(message.channel, "name", "unknown"))
+    cooldown_key = (channel_id, pilot_name)
+    
+    # Check cooldown
+    if cooldown_key in _spontaneous_cooldown:
+        if time.time() - _spontaneous_cooldown[cooldown_key] < SPONTANEOUS_COOLDOWN_SECONDS:
+            return False
+    
+    content = (message.content or "").lower()
+    
+    # Check if pilot is mentioned or discussed
+    pilot_profile = PILOT_PROFILES.get(pilot_name.lower().split()[0].lower())
+    if not pilot_profile:
+        return False
+    
+    # Check for mentions and keywords associated with this pilot
+    keywords = list(pilot_profile["aliases"]) + [
+        pilot_profile["unit"].lower(),
+        f"unit-{pilot_profile['unit'].split()[-1].lower()}",
+    ]
+    
+    # Also add character-specific keywords
+    if "shinji" in pilot_name.lower():
+        keywords.extend(["misato", "gendo", "father", "deserved", "run away", "eva"])
+    elif "asuka" in pilot_name.lower():
+        keywords.extend(["baka", "dummkopf", "second child", "competitive", "pity"])
+    elif "rei" in pilot_name.lower():
+        keywords.extend(["first child", "quiet", "emotionless", "unit-00"])
+    
+    if any(kw in content for kw in keywords):
+        _spontaneous_cooldown[cooldown_key] = __import__("time").time()
+        return True
+    
+    return False
+
+
+def get_emoji_for_pilot(pilot_name):
+    """Return an appropriate emoji reaction for a pilot based on their personality."""
+    if "shinji" in pilot_name.lower():
+        return "😔"  # sad/resigned
+    elif "asuka" in pilot_name.lower():
+        return "🔥"  # fiery/aggressive
+    elif "rei" in pilot_name.lower():
+        return "❄️"  # cold/enigmatic
+    return "👍"
 
 
 def can_respond_to_message(message, bot_user):

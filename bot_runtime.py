@@ -1,6 +1,11 @@
 import asyncio
 
-from eva_context import build_user_prompt, format_bot_reply, display_name_for_user
+from eva_context import (
+    build_user_prompt,
+    format_bot_reply,
+    display_name_for_user,
+    get_emoji_for_pilot,
+)
 import re
 
 
@@ -28,7 +33,7 @@ async def _build_recent_context(message, limit=8):
         return ""
 
 
-async def reply_with_model(message, bot_user, client, model, system_prompt, fallback_message):
+async def reply_with_model(message, bot_user, client, model, system_prompt, fallback_message, pilot_name="Unknown"):
     try:
         # Build an augmented user prompt including a short recent history
         recent_context = await _build_recent_context(message)
@@ -54,7 +59,14 @@ async def reply_with_model(message, bot_user, client, model, system_prompt, fall
 
         reply = response.choices[0].message.content
         formatted = format_bot_reply(reply, message, bot_user=bot_user)
-        await message.reply(formatted, mention_author=False)
+        sent_message = await message.reply(formatted, mention_author=False)
+        
+        # Add character-appropriate emoji reaction to show engagement
+        try:
+            emoji = get_emoji_for_pilot(pilot_name)
+            await sent_message.add_reaction(emoji)
+        except Exception:
+            pass
     except Exception as e:
         print(f"Error calling NVIDIA API: {e}")
         try:

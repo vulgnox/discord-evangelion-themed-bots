@@ -11,6 +11,7 @@ from eva_context import (  # noqa: E402
     KNOWN_PEOPLE_CONTEXT,
     record_recent_message,
     can_respond_to_message,
+    should_spontaneously_respond,
 )
 
 # Load configuration from environment variables
@@ -103,19 +104,31 @@ async def on_message(message):
     except Exception:
         pass
 
-    # allow response only if mention rules allow it
-    if not can_respond_to_message(message, bot.user):
-        return
-
-    print(f"Received message from {message.author}: {message.content}")
-    await reply_with_model(
-        message=message,
-        bot_user=bot.user,
-        client=client,
-        model=NVIDIA_MODEL,
-        system_prompt=system_prompt,
-        fallback_message="... i can't respond right now... sorry...",
-    )
+    # Check if directly mentioned
+    if can_respond_to_message(message, bot.user):
+        print(f"Received message from {message.author}: {message.content}")
+        await reply_with_model(
+            message=message,
+            bot_user=bot.user,
+            client=client,
+            model=NVIDIA_MODEL,
+            system_prompt=system_prompt,
+            fallback_message="... i can't respond right now... sorry...",
+            pilot_name="Shinji Ikari",
+        )
+    # Allow spontaneous responses when being discussed
+    elif should_spontaneously_respond(message, "Shinji Ikari"):
+        message.bot_user = bot.user
+        print(f"Spontaneous response to {message.author}: {message.content}")
+        await reply_with_model(
+            message=message,
+            bot_user=bot.user,
+            client=client,
+            model=NVIDIA_MODEL,
+            system_prompt=system_prompt,
+            fallback_message="... i can't respond right now... sorry...",
+            pilot_name="Shinji Ikari",
+        )
 
 # Start the bot
 bot.run(DISCORD_TOKEN)
