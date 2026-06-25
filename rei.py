@@ -122,7 +122,6 @@ async def on_message(message):
         )
     # Allow spontaneous responses when being discussed
     elif should_spontaneously_respond(message, "Rei Ayanami"):
-        message.bot_user = bot.user
         print(f"Spontaneous response to {message.author}: {message.content}")
         await reply_with_model(
             message=message,

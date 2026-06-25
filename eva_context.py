@@ -98,7 +98,7 @@ def should_spontaneously_respond(message, pilot_name):
     """
     import random
     
-    if message.author == getattr(message, "bot_user", None):  # Don't respond to self
+    if getattr(message.author, "bot", False):  # Don't respond to bot messages
         return False
     
     channel_id = getattr(message.channel, "id", None) or str(getattr(message.channel, "name", "unknown"))
