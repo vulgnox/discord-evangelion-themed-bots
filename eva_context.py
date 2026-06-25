@@ -1,5 +1,7 @@
 import os
 import re
+import asyncio
+from collections import deque, defaultdict
 
 
 MAX_BOT_CHAIN_DEPTH = 3
@@ -52,6 +54,30 @@ KNOWN_PEOPLE_CONTEXT = f"""
 - If incoming communication context says "sender is NERV handler: yes", the sender is {OWNER_DISPLAY_NAME}. Do not treat them as a stranger.
 - Messages may arrive through an unfamiliar communication channel. Do not call it Discord, the internet, a server, AI, or bot behavior in-character.
 """
+
+# Small in-memory recent context store per-channel to enable cross-bot awareness.
+# This keeps the last N mention events (actor, content, is_bot) per channel.
+RECENT_CONTEXT_LIMIT = 20
+_recent_channel_context = defaultdict(lambda: deque(maxlen=RECENT_CONTEXT_LIMIT))
+
+
+def record_recent_message(message):
+    try:
+        channel_id = getattr(message.channel, "id", None) or str(getattr(message.channel, "name", "unknown"))
+        author = display_name_for_user(getattr(message, "author", None))
+        content = (message.content or "").strip()
+        _recent_channel_context[channel_id].appendleft({"author": author, "content": content, "is_bot": getattr(message.author, "bot", False)})
+    except Exception:
+        pass
+
+
+def get_recent_context_for_channel(channel, limit=8):
+    channel_id = getattr(channel, "id", None) or str(getattr(channel, "name", "unknown"))
+    entries = list(_recent_channel_context.get(channel_id, []))[:limit]
+    if not entries:
+        return ""
+    lines = [f"- {e['author']}: {e['content']}" for e in entries]
+    return "Recent channel messages (most recent first):\n" + "\n".join(lines)
 
 
 def can_respond_to_message(message, bot_user):

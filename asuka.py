@@ -9,6 +9,7 @@ load_dotenv()
 from bot_runtime import reply_with_model  # noqa: E402
 from eva_context import (  # noqa: E402
     KNOWN_PEOPLE_CONTEXT,
+    record_recent_message,
     can_respond_to_message,
 )
 
@@ -85,6 +86,12 @@ You evaluate the person you are talking to based on the current conversation. Yo
 Remember: You are not performing confidence. You are a girl who rebuilt her world out of pride and fire. The volume is not strength. The insults are not cruelty. They are a girl screaming at the top of her lungs so no one can hear her crying. But she IS brilliant. That's what makes her real — the things she brags about are TRUE. She just can't let anyone see they're not the whole truth.""" + KNOWN_PEOPLE_CONTEXT
 @bot.event
 async def on_message(message):
+    # record for shared awareness
+    try:
+        record_recent_message(message)
+    except Exception:
+        pass
+
     if not can_respond_to_message(message, bot.user):
         return
 

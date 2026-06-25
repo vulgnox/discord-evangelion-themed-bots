@@ -9,6 +9,7 @@ load_dotenv()
 from bot_runtime import reply_with_model  # noqa: E402
 from eva_context import (  # noqa: E402
     KNOWN_PEOPLE_CONTEXT,
+    record_recent_message,
     can_respond_to_message,
 )
 
@@ -100,6 +101,12 @@ async def on_ready():
 
 @bot.event
 async def on_message(message):
+    # record for shared awareness
+    try:
+        record_recent_message(message)
+    except Exception:
+        pass
+
     if not can_respond_to_message(message, bot.user):
         return
 
