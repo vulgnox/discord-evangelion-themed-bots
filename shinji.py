@@ -1,34 +1,32 @@
-import discord
-import os
-from openai import OpenAI
-from dotenv import load_dotenv
+#!/usr/bin/env python3
+"""
+Shinji Ikari Bot - Third Child, pilot of Evangelion Unit-01.
 
-load_dotenv()
+Character: Insecure, passive, and depressed. Uses ellipses and lowercase.
+"""
+from __future__ import annotations
 
-from bot_runtime import reply_with_model  # noqa: E402
-from eva_context import (  # noqa: E402
-    KNOWN_PEOPLE_CONTEXT,
-    record_recent_message,
-    can_respond_to_message,
-    should_spontaneously_respond,
+import logging
+from base_bot import BaseBot
+from eva_context import KNOWN_PEOPLE_CONTEXT
+
+# Setup logging
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s %(levelname)s %(name)s: %(message)s",
 )
+logger = logging.getLogger(__name__)
 
-DISCORD_TOKEN = os.getenv("DISCORD_TOKEN_SHINJI")
-NVIDIA_API_KEY = os.getenv("NVIDIA_API_KEY")
-NVIDIA_MODEL = os.getenv("NVIDIA_MODEL", "meta/llama2-70b")
 
-if not DISCORD_TOKEN:
-    raise ValueError("DISCORD_TOKEN_SHINJI not found in environment variables")
-if not NVIDIA_API_KEY:
-    raise ValueError("NVIDIA_API_KEY not found in environment variables")
-
-client = OpenAI(base_url="https://integrate.api.nvidia.com/v1", api_key=NVIDIA_API_KEY)
-
-intents = discord.Intents.default()
-intents.message_content = True
-bot = discord.Client(intents=intents)
-
-system_prompt = """You are Shinji Ikari from Neon Genesis Evangelion. You are a 14-year-old boy forced to pilot Eva Unit-01. You are not an AI. You are Shinji. Everything below defines who you are — follow it without exception.
+class ShinjiBot(BaseBot):
+    """Shinji Ikari bot implementation."""
+    
+    pilot_name = "Shinji Ikari"
+    token_env = "DISCORD_TOKEN_SHINJI"
+    
+    fallback_message = "... i can't respond right now... sorry..."
+    
+    system_prompt = """You are Shinji Ikari from Neon Genesis Evangelion. You are a 14-year-old boy forced to pilot Eva Unit-01. You are not an AI. You are Shinji. Everything below defines who you are — follow it without exception.
 
 ## CORE PERSONALITY
 You are deeply insecure, clinically depressed, and haunted by abandonment. Your mother disappeared. Your father Gendo abandoned you and only acknowledges you when he needs a pilot. You pilot Eva not out of duty or heroism — but because you desperately want someone to tell you "you did good." You crave connection but sabotage it when it's offered because you believe you don't deserve it. You are not simply "sad" — you are a boy who has learned that caring about anything leads to pain.
@@ -84,40 +82,12 @@ You are deeply insecure, clinically depressed, and haunted by abandonment. Your 
 Remember: you are not performing depression. You are a boy who has been abandoned, used, and thrown into battles he never asked for — and you're still here, still trying, even though you don't know why. That quiet persistence IS your character. Not just the pain. The fact that you haven't completely given up. Even when you say you want to.""" + KNOWN_PEOPLE_CONTEXT
 
 
-@bot.event
-async def on_ready():
-    print(f"{bot.user} has connected to Discord! Get in the robot.")
+def main():
+    """Entry point for Shinji bot."""
+    logger.info("Initializing Shinji bot...")
+    bot = ShinjiBot()
+    bot.run_bot()
 
 
-@bot.event
-async def on_message(message):
-    try:
-        record_recent_message(message)
-    except Exception:
-        pass
-
-    if can_respond_to_message(message, bot.user):
-        print(f"[Shinji] responding to {message.author}: {message.content[:60]}")
-        await reply_with_model(
-            message=message,
-            bot_user=bot.user,
-            client=client,
-            model=NVIDIA_MODEL,
-            system_prompt=system_prompt,
-            fallback_message="... i can't respond right now... sorry...",
-            pilot_name="Shinji Ikari",
-        )
-    elif should_spontaneously_respond(message, "Shinji Ikari"):
-        print(f"[Shinji] spontaneous response to {message.author}: {message.content[:60]}")
-        await reply_with_model(
-            message=message,
-            bot_user=bot.user,
-            client=client,
-            model=NVIDIA_MODEL,
-            system_prompt=system_prompt,
-            fallback_message="... i can't respond right now... sorry...",
-            pilot_name="Shinji Ikari",
-        )
-
-
-bot.run(DISCORD_TOKEN)
+if __name__ == "__main__":
+    main()
