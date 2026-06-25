@@ -209,6 +209,10 @@ All state is in-memory (no persistence):
 - Hard moderation blocks only genuinely harmful content
 - Character-appropriate responses are allowed (e.g., Asuka's insults)
 
+## Web interface
+Fell free to check the interactive web interface for installation
+link - https://discord-eva-bots-web.onrender.com/
+
 ## License
 
 MIT
