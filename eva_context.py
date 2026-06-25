@@ -86,6 +86,63 @@ def get_recent_context_for_channel(channel, limit=8):
     return "Recent channel messages (most recent first):\n" + "\n".join(lines)
 
 
+def detect_question_type(text):
+    content = (text or "").strip().lower()
+    if not content:
+        return None
+    if "?" not in content:
+        return None
+    for qword in ("why", "what", "how", "when", "where", "who"):
+        if content.startswith(qword) or f" {qword} " in content:
+            return qword
+    return "general"
+
+
+def build_discussion_summary(message, bot_user=None, limit=10):
+    channel_id = getattr(message.channel, "id", None) or str(getattr(message.channel, "name", "unknown"))
+    entries = list(_recent_channel_context.get(channel_id, []))[:limit]
+    if entries and entries[0].get("content") == (message.content or "").strip():
+        recent_messages = entries
+    else:
+        recent_messages = [{"author": display_name_for_user(getattr(message, "author", None)), "content": (message.content or "").strip()}] + entries
+
+    pilot_mentions = defaultdict(int)
+    topic_keywords = defaultdict(int)
+    for entry in recent_messages:
+        content = (entry.get("content") or "").lower()
+        for key, profile in PILOT_PROFILES.items():
+            for alias in profile["aliases"]:
+                if alias in content:
+                    pilot_mentions[profile["name"]] += 1
+        if "eva" in content:
+            topic_keywords["Eva combat"] += 1
+        if "mission" in content or "missions" in content:
+            topic_keywords["missions"] += 1
+        if "feeling" in content or "feel" in content or "anxious" in content:
+            topic_keywords["feelings"] += 1
+        if "cry" in content or "sad" in content or "hurt" in content:
+            topic_keywords["emotion"] += 1
+        if "Rei" in entry.get("content", "") or "rei" in content:
+            topic_keywords["Rei"] += 1
+        if "Asuka" in entry.get("content", "") or "asuka" in content:
+            topic_keywords["Asuka"] += 1
+        if "Shinji" in entry.get("content", "") or "shinji" in content:
+            topic_keywords["Shinji"] += 1
+    
+    ordered_pilots = [name for name, _ in sorted(pilot_mentions.items(), key=lambda x: -x[1])]
+    ordered_topics = [name for name, _ in sorted(topic_keywords.items(), key=lambda x: -x[1])]
+    
+    parts = []
+    if ordered_pilots:
+        parts.append("Pilots being discussed: " + ", ".join(ordered_pilots))
+    if ordered_topics:
+        parts.append("Conversation topics: " + ", ".join(ordered_topics[:3]))
+    question_type = detect_question_type(message.content)
+    if question_type:
+        parts.append(f"The latest message is a {question_type} question.")
+    return "Discussion summary: " + " ".join(parts) if parts else "Discussion summary: General pilot conversation."
+
+
 def should_spontaneously_respond(message, pilot_name):
     """Check if a pilot should spontaneously join the conversation.
     

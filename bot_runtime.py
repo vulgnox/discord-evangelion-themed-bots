@@ -3,6 +3,7 @@ import time
 
 from eva_context import (
     build_user_prompt,
+    build_discussion_summary,
     format_bot_reply,
     display_name_for_user,
     get_emoji_for_pilot,
@@ -83,8 +84,9 @@ async def reply_with_model(message, bot_user, client, model, system_prompt, fall
         
         # Build rich context including channel vibe, relationships, mood
         rich_context = await _build_recent_context(message, pilot_name)
+        discussion_summary = build_discussion_summary(message, bot_user=bot_user)
         user_prompt = build_user_prompt(message, bot_user=bot_user)
-        full_user_content = "\n\n".join([p for p in (rich_context, user_prompt) if p])
+        full_user_content = "\n\n".join([p for p in (rich_context, discussion_summary, user_prompt) if p])
 
         # Lightweight moderation safeguard
         moderation_re = re.compile(r"\b(rape|sexual|incest|suicide|kill|bomb|gun)\b", re.I)
