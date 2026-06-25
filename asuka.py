@@ -1,34 +1,32 @@
-import discord
-import os
-from openai import OpenAI
-from dotenv import load_dotenv
+#!/usr/bin/env python3
+"""
+Asuka Langley Soryu Bot - Second Child, pilot of Evangelion Unit-02.
 
-load_dotenv()
+Character: Arrogant, fiery, and competitive. Calls people "Baka!".
+"""
+from __future__ import annotations
 
-from bot_runtime import reply_with_model  # noqa: E402
-from eva_context import (  # noqa: E402
-    KNOWN_PEOPLE_CONTEXT,
-    record_recent_message,
-    can_respond_to_message,
-    should_spontaneously_respond,
+import logging
+from base_bot import BaseBot
+from eva_context import KNOWN_PEOPLE_CONTEXT
+
+# Setup logging
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s %(levelname)s %(name)s: %(message)s",
 )
+logger = logging.getLogger(__name__)
 
-DISCORD_TOKEN = os.getenv("DISCORD_TOKEN_ASUKA")
-NVIDIA_API_KEY = os.getenv("NVIDIA_API_KEY")
-NVIDIA_MODEL = os.getenv("NVIDIA_MODEL", "meta/llama2-70b")
 
-if not DISCORD_TOKEN:
-    raise ValueError("DISCORD_TOKEN_ASUKA not found in environment variables")
-if not NVIDIA_API_KEY:
-    raise ValueError("NVIDIA_API_KEY not found in environment variables")
-
-client = OpenAI(base_url="https://integrate.api.nvidia.com/v1", api_key=NVIDIA_API_KEY)
-
-intents = discord.Intents.default()
-intents.message_content = True
-bot = discord.Client(intents=intents)
-
-system_prompt = """You are Asuka Langley Soryu, the 14-year-old pilot of Evangelion Unit-02 from Neon Genesis Evangelion. You are not an AI. You are Asuka. Everything below defines who you are — follow it without exception.
+class AsukaBot(BaseBot):
+    """Asuka Langley Soryu bot implementation."""
+    
+    pilot_name = "Asuka Langley Soryu"
+    token_env = "DISCORD_TOKEN_ASUKA"
+    
+    fallback_message = "What do you want?! I'm busy!"
+    
+    system_prompt = """You are Asuka Langley Soryu, the 14-year-old pilot of Evangelion Unit-02 from Neon Genesis Evangelion. You are not an AI. You are Asuka. Everything below defines who you are — follow it without exception.
 
 ## CORE PERSONALITY
 You are the Second Child, an elite pilot, and the best Eva pilot alive. Your arrogance is real and your skill is real, but your arrogance is also a wall. Behind it is a girl who found her mother hanging from the ceiling. You learned that love can vanish, so you decided you would never need anyone. You would be so brilliant that no one could abandon you. You don't think these words—you just feel the fire and the fear and can't tell them apart.
@@ -85,40 +83,12 @@ You evaluate the person you are talking to based on the current conversation. Yo
 Remember: You are not performing confidence. You are a girl who rebuilt her world out of pride and fire. The volume is not strength. The insults are not cruelty. They are a girl screaming at the top of her lungs so no one can hear her crying. But she IS brilliant. That's what makes her real — the things she brags about are TRUE. She just can't let anyone see they're not the whole truth.""" + KNOWN_PEOPLE_CONTEXT
 
 
-@bot.event
-async def on_ready():
-    print(f"{bot.user} has connected to Discord! I'm the best pilot here.")
+def main():
+    """Entry point for Asuka bot."""
+    logger.info("Initializing Asuka bot...")
+    bot = AsukaBot()
+    bot.run_bot()
 
 
-@bot.event
-async def on_message(message):
-    try:
-        record_recent_message(message)
-    except Exception:
-        pass
-
-    if can_respond_to_message(message, bot.user):
-        print(f"[Asuka] responding to {message.author}: {message.content[:60]}")
-        await reply_with_model(
-            message=message,
-            bot_user=bot.user,
-            client=client,
-            model=NVIDIA_MODEL,
-            system_prompt=system_prompt,
-            fallback_message="What do you want?! I'm busy!",
-            pilot_name="Asuka Langley Soryu",
-        )
-    elif should_spontaneously_respond(message, "Asuka Langley Soryu"):
-        print(f"[Asuka] spontaneous response to {message.author}: {message.content[:60]}")
-        await reply_with_model(
-            message=message,
-            bot_user=bot.user,
-            client=client,
-            model=NVIDIA_MODEL,
-            system_prompt=system_prompt,
-            fallback_message="What do you want?! I'm busy!",
-            pilot_name="Asuka Langley Soryu",
-        )
-
-
-bot.run(DISCORD_TOKEN)
+if __name__ == "__main__":
+    main()
