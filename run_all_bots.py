@@ -1,17 +1,30 @@
 #!/usr/bin/env python3
-"""Launcher — runs all three bots as subprocesses, restarts on crash, cleans up on exit."""
+"""
+Launcher — runs all three bots as subprocesses.
+Restarts individual bots on crash, cleans up on SIGINT/SIGTERM.
+"""
+import os
+import signal
 import subprocess
 import sys
-import signal
 import threading
 import time
+
+# Ensure the SQLite data directory exists (Fly.io volume or local)
+_sqlite_path = os.getenv("SQLITE_PATH", "eva_bots.db")
+_data_dir = os.path.dirname(_sqlite_path)
+if _data_dir and not os.path.exists(_data_dir):
+    try:
+        os.makedirs(_data_dir, exist_ok=True)
+    except OSError:
+        pass
 
 _processes: dict[str, subprocess.Popen] = {}
 _running = True
 _lock = threading.Lock()
 
 
-def run_bot(bot_name: str):
+def run_bot(bot_name: str) -> None:
     global _running
     while _running:
         try:
@@ -23,7 +36,8 @@ def run_bot(bot_name: str):
             with _lock:
                 _processes.pop(bot_name, None)
             if _running:
-                print(f"[{bot_name}] Exited (code {proc.returncode}). Restarting in 5s...")
+                code = proc.returncode
+                print(f"[{bot_name}] Exited (code {code}). Restarting in 5s...")
                 time.sleep(5)
         except Exception as e:
             print(f"[{bot_name}] Error: {e}")
@@ -31,7 +45,7 @@ def run_bot(bot_name: str):
                 time.sleep(5)
 
 
-def shutdown(signum=None, frame=None):
+def shutdown(signum=None, frame=None) -> None:
     global _running
     print("\n[Launcher] Shutting down all bots...")
     _running = False
@@ -61,7 +75,7 @@ if __name__ == "__main__":
     for bot in bots:
         t = threading.Thread(target=run_bot, args=(bot,), daemon=True)
         t.start()
-        time.sleep(1)  # Stagger startup to avoid token rate limits
+        time.sleep(1.5)  # Stagger to avoid race on DB init
 
     print("All bots launched. Ctrl+C to stop.")
 

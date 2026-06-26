@@ -43,3 +43,19 @@ env/
 # OS
 .DS_Store
 Thumbs.db
+
+#tests
+tests/
+
+
+#aider
+.aider.chat.history.md
+.aider.input.history.md
+.aider.input.history
+.aider.tags.cache.v4
+
+
+#idk
+check.py
+repomix-output.xml
+test_api.py

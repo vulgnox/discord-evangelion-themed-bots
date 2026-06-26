@@ -1,27 +1,31 @@
+"""
+bot_runtime.py — Core LLM response loop, shared by all three bots.
+"""
+from __future__ import annotations
+
 import asyncio
 import random
 import re
 
+from db import db_add_conversation_turn, db_get_conversation_history
 from eva_context import (
-    build_user_prompt,
-    format_bot_reply,
-    get_emoji_for_pilot,
-    get_channel_vibe,
-    get_pilot_mood_descriptor,
-    get_user_relationship_context,
-    update_pilot_mood,
-    update_channel_sentiment,
-    update_user_interaction,
     analyze_sentiment,
-    get_recent_context_for_channel,
-    get_conversation_history,
-    add_to_conversation_history,
-    get_pilot_temperature,
+    build_user_prompt,
+    extract_action_from_reply,
+    format_bot_reply,
+    get_channel_vibe,
+    get_emoji_for_pilot,
+    get_pilot_mood_descriptor,
     get_pilot_read_delay,
+    get_pilot_temperature,
+    get_recent_context_for_channel,
+    get_user_relationship_context,
+    update_channel_sentiment,
+    update_pilot_mood,
+    update_user_interaction,
 )
 
-# Only block genuinely harmful requests — not edgy conversation.
-# Asuka yelling "I'll kill you baka!" is in-character; building a bomb is not.
+# Only block genuinely dangerous requests — character edge cases are handled by system prompts.
 _HARD_MODERATION_RE = re.compile(
     r"\b("
     r"how (to|do (i|you)) (make|build|synthesize) (a |an )?(bomb|explosive|poison|nerve agent|weapon)|"
@@ -33,23 +37,24 @@ _HARD_MODERATION_RE = re.compile(
 )
 
 
-def _build_context_block(message, pilot_name):
-    """Compact context block from in-memory stores only — no Discord API calls."""
+def is_harmful_content(text: str) -> bool:
+    return bool(_HARD_MODERATION_RE.search(text or ""))
+
+
+def _build_context_block(message, pilot_name: str) -> str:
+    """Compact context injected before the user prompt. No Discord API calls."""
     parts = []
 
-    # Recent channel messages (raw, lets the model read the room)
-    recent = get_recent_context_for_channel(message.channel, limit=6)
+    recent = get_recent_context_for_channel(message.channel, limit=8)
     if recent:
         parts.append(recent)
 
-    # Compact metadata: only include non-default / informative values
     meta = []
     vibe = get_channel_vibe(message.channel)
     if vibe != "neutral":
         meta.append(f"channel atmosphere: {vibe}")
 
-    mood = get_pilot_mood_descriptor(pilot_name)
-    meta.append(f"your current state: {mood}")
+    meta.append(f"your current state: {get_pilot_mood_descriptor(pilot_name)}")
 
     rel = get_user_relationship_context(message, pilot_name)
     if rel:
@@ -65,42 +70,51 @@ async def reply_with_model(
     message,
     bot_user,
     client,
-    model,
-    system_prompt,
-    fallback_message,
-    pilot_name="Unknown",
-):
+    model: str,
+    system_prompt: str,
+    fallback_message: str,
+    pilot_name: str = "Unknown",
+) -> str | None:
+    """
+    Full response pipeline:
+      1. Update tracking state
+      2. Hard moderation gate
+      3. Build context + prompt
+      4. Inject conversation history from DB
+      5. Read delay → typing indicator → LLM call → write delay
+      6. Persist exchange to DB
+      7. Format + send reply
+    Returns raw LLM text so callers (e.g. Rei) can inspect it for action tags.
+    """
     try:
-        channel_id = getattr(message.channel, "id", "unknown")
+        channel_id = str(getattr(message.channel, "id", "unknown"))
 
-        # Update tracking state
+        # Update tracking
         update_channel_sentiment(message)
         update_user_interaction(message, pilot_name)
         update_pilot_mood(pilot_name, analyze_sentiment(message.content) * 0.1)
 
-        # Hard moderation — character-appropriate refusals are handled by the system prompt
-        if _HARD_MODERATION_RE.search(message.content or ""):
+        # Hard moderation
+        if is_harmful_content(message.content or ""):
             await message.channel.send(fallback_message)
-            return
+            return None
 
-        # Build this turn's user-side content
         context_block = _build_context_block(message, pilot_name)
         user_prompt = build_user_prompt(message, bot_user=bot_user)
         full_user_content = "\n\n".join(filter(None, [context_block, user_prompt]))
 
-        # Multi-turn: inject prior exchanges so the model has continuity
-        history = get_conversation_history(channel_id, pilot_name)
+        # Load persistent conversation history from DB
+        history = await asyncio.to_thread(
+            db_get_conversation_history, channel_id, pilot_name, max_turns=6
+        )
 
         messages = [{"role": "system", "content": system_prompt}]
         messages.extend(history)
         messages.append({"role": "user", "content": full_user_content})
 
-        # ── Timing: read → type → send ────────────────────────────────────────
-        # 1. Pilot "reads" the message (no indicator yet — just a pause)
-        read_delay = get_pilot_read_delay(pilot_name)
-        await asyncio.sleep(read_delay)
+        # ── Timing simulation ──────────────────────────────────────────────────
+        await asyncio.sleep(get_pilot_read_delay(pilot_name))
 
-        # 2. Typing indicator is visible while we wait for the model AND simulate writing
         async with message.channel.typing():
             response = await asyncio.to_thread(
                 client.chat.completions.create,
@@ -108,31 +122,31 @@ async def reply_with_model(
                 messages=messages,
                 temperature=get_pilot_temperature(pilot_name),
                 top_p=0.95,
-                max_tokens=250,   # Keep replies concise — these characters are not verbose
+                max_tokens=250,
             )
 
             reply = (response.choices[0].message.content or "").strip()
 
-            # Simulate the pilot actually writing the response (inside typing context)
             if reply:
                 words = len(reply.split())
-                write_speed = {  # words per minute, character-appropriate
-                    "Shinji Ikari": 55,
-                    "Asuka Langley Soryu": 90,
-                    "Rei Ayanami": 45,
-                }.get(pilot_name, 65)
-                write_delay = max(0.4, min(words / (write_speed / 60), 5.0))
+                wpm = {"Shinji Ikari": 55, "Asuka Langley Soryu": 90, "Rei Ayanami": 45}.get(
+                    pilot_name, 65
+                )
+                write_delay = max(0.4, min(words / (wpm / 60), 5.0))
                 await asyncio.sleep(write_delay)
 
         if not reply:
             await message.channel.send(fallback_message)
-            return
+            return None
 
-        # 3. Store the exchange for next-turn continuity
-        add_to_conversation_history(channel_id, pilot_name, "user", full_user_content)
-        add_to_conversation_history(channel_id, pilot_name, "assistant", reply)
+        # Persist to DB
+        await asyncio.to_thread(
+            db_add_conversation_turn, channel_id, pilot_name, "user", full_user_content
+        )
+        await asyncio.to_thread(
+            db_add_conversation_turn, channel_id, pilot_name, "assistant", reply
+        )
 
-        # 4. Send
         formatted = format_bot_reply(reply, message, bot_user=bot_user)
         sent = await message.reply(formatted, mention_author=False)
 
@@ -141,7 +155,7 @@ async def reply_with_model(
         except Exception:
             pass
 
-        return reply  # Return the raw LLM reply so Rei can extract actions
+        return reply
 
     except Exception as e:
         print(f"[{pilot_name}] API error: {e}")
